@@ -1,0 +1,11 @@
+{
+  "calls": [
+    {
+      "to": "<number>",
+      "from": "+17437274354",
+      "message": "This is your appointment reminder.",
+      "datetime": "2025-06-26 17:09",
+      "called": true
+    }
+  ]
+}
