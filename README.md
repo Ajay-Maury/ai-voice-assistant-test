@@ -1,13 +1,13 @@
-# 📞 Twilio KT (Knowledge Transfer) – India-Focused Integration
+
+# 📞 Twilio AI Voice Assistant Prototype
 
 This repo demonstrates end-to-end usage of **Twilio** for:
 
 - ✅ Voice Calls (Incoming & Outgoing)
 - ✅ Interactive Voice Response (IVR) – Press 1 / Press 2
 - ✅ SMS Sending & Auto-Reply
-- ✅ WhatsApp Messaging
-- ✅ Email Sending (via SendGrid)
 - ✅ Scheduled Call Automation
+- ✅ Voice Calls (Incoming & Outgoing) with AI Assistant
 
 ---
 
@@ -17,17 +17,19 @@ This repo demonstrates end-to-end usage of **Twilio** for:
    ```bash
    git clone https://github.com/yourusername/twilio-kt.git
    cd twilio-kt
-   ```
+   ````
 
 2. **Install dependencies**
+
    ```bash
    pip install -r requirements.txt
    ```
 
 3. **Configure environment**
+
    ```bash
    cp .env.sample .env
-   # Fill in your Twilio and SendGrid credentials
+   # Fill in your Twilio and Azure OpenAI credentials
    ```
 
 ---
@@ -40,8 +42,12 @@ In your `.env` file:
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token
 TWILIO_PHONE_NUMBER=+1XXXXXXXXXX
-WHATSAPP_SANDBOX_NUMBER=whatsapp:+14155238886
-SENDGRID_API_KEY=SG.xxxxxxxxxxxxxxxxxxxxx
+
+# For AI Voice Assistant
+AZURE_OPENAI_API_KEY=your_azure_api_key
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_API_VERSION=2023-05-15
+AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4-deployment-name
 ```
 
 ---
@@ -54,10 +60,10 @@ twilio-kt/
 │   ├── voice_outgoing.py       # Make an outbound call
 │   ├── sms.py                  # Send SMS
 │   ├── scheduler.py            # Check JSON schedule and make calls
-│   └── email_sendgrid.py       # Send email (optional)
 ├── server.py                   # Handles incoming voice/SMS/IVR
 ├── schedule.json               # Call schedule storage
 ├── requirements.txt
+├── voice_assistant.py          # Handles incoming/outgoing calls with AI Assistant
 ├── .env.sample
 └── README.md
 ```
@@ -74,58 +80,59 @@ python app/voice_outgoing.py
 
 > Sends a voice call to the recipient using Twilio's Say command.
 
+---
+
 ### ✅ 2. Incoming Call with IVR (Press 1, Press 2)
 
 Run:
+
 ```bash
 python server.py
 ```
 
-- Set webhook on your Twilio console for **Voice** to:
+* Set webhook on your Twilio console for **Voice** to:
+
   ```
   https://your-ngrok-or-server/incoming-voice
   ```
 
-- Logic:
-  - Press 1 → Connects to Sales
-  - Press 2 → Connects to Support
+* Logic:
+
+  * Press 1 → Connects to Sales
+  * Press 2 → Connects to Support
 
 ---
 
 ## 📩 SMS Functionality
 
 ### ✅ Send SMS
+
 ```bash
 python app/sms.py
 ```
 
+---
+
 ### ✅ Auto-Reply to SMS
 
 Set Twilio SMS webhook to:
+
 ```
 https://your-ngrok-or-server/incoming-sms
 ```
 
-- Replies to:
-  - "hi" → "Hello!"
-  - "1" → Account help
-  - "2" → Support
+* Replies to:
 
----
-
-## 🟢 WhatsApp Support (Optional)
-
-Same as SMS logic; just update the number with:
-```
-from_='whatsapp:+14155238886',
-to='whatsapp:+91XXXXXXXXXX'
-```
+  * "hi" → "Hello!"
+  * "1" → Account help
+  * "2" → Support
 
 ---
 
 ## 🕒 Scheduled Call Automation
 
 Edit `schedule.json`:
+
 ```json
 {
   "calls": [
@@ -141,6 +148,7 @@ Edit `schedule.json`:
 ```
 
 Then run:
+
 ```bash
 python app/scheduler.py
 ```
@@ -149,59 +157,91 @@ python app/scheduler.py
 
 ---
 
-## 📧 Send Email (SendGrid)
+## 🤖 Incoming/Outgoing Calls with AI Assistant
 
-Create `email_sendgrid.py` like:
+This feature enables dynamic conversations between callers and an AI-powered assistant using **Azure OpenAI GPT-4** and **Twilio Voice**.
 
-```python
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
-import os
+---
 
-message = Mail(
-    from_email='your@example.com',
-    to_emails='to@example.com',
-    subject='Appointment Reminder',
-    plain_text_content='This is a test email from Twilio KT project.'
-)
+### ✅ Incoming Call (AI Assistant)
 
-sg = SendGridAPIClient(os.getenv('SENDGRID_API_KEY'))
-response = sg.send(message)
-print(response.status_code)
+1. **Run the AI voice server**:
+
+   ```bash
+   python voice_assistant.py
+   ```
+
+2. **Set Twilio Voice Webhook**:
+
+   * Go to [Twilio Console > Phone Numbers](https://www.twilio.com/console/phone-numbers)
+   * Under **Voice & Fax**, set the webhook URL:
+
+     ```
+     https://your-ngrok-or-server/voice
+     Method: POST
+     ```
+
+3. **Behavior**:
+
+   * Greets the caller: “Hello, I am your AI assistant. How can I help you today?”
+   * Captures user speech and sends it to Azure OpenAI GPT-4.
+   * Responds using a natural voice (`Polly.Joanna`).
+   * User can say “end the call” or “goodbye” to disconnect.
+
+---
+
+### ✅ Outgoing Call (AI Assistant)
+
+Make a POST request to trigger an AI-driven call:
+
+```bash
+curl -X POST http://localhost:5000/make-call \
+  -d "to=+1XXXXXXXXXX"
 ```
+
+> The recipient will receive a call and interact with the AI assistant similarly to an inbound call.
+
+---
+
+### 🧠 Key Features
+
+* **Speech recognition + Twilio Gather** for input
+* **GPT-4 (via Azure OpenAI)** for context-aware replies
+* **Amazon Polly voice (Joanna)** for lifelike responses
+* **Natural disconnection flow**: recognizes exit phrases like:
+
+  * "end the call"
+  * "hang up"
+  * "goodbye"
+  * "no thank you"
 
 ---
 
 ## 🧪 Testing Tips
 
-- Use [ngrok](https://ngrok.com/) to test webhooks:
+* Use [ngrok](https://ngrok.com/) to test webhooks:
+
   ```bash
   ngrok http 5000
   ```
 
-- Set this ngrok URL in Twilio Console for:
-  - Voice: `/incoming-voice`
-  - SMS: `/incoming-sms`
+* Set this ngrok URL in Twilio Console for:
+
+  * Voice: `/incoming-voice` or `/voice` (for AI Assistant)
+  * SMS: `/incoming-sms`
 
 ---
 
 ## 📌 Common Use Cases (Mapped)
 
 | Feature         | Tool/File               | How to Use                      |
-|------------------|--------------------------|----------------------------------|
-| Outgoing Call    | `voice_outgoing.py`      | Run directly via Python         |
-| Incoming Call    | `server.py`              | Webhook with IVR                |
-| Press 1 / 2 IVR  | `/incoming-voice` route  | Uses TwiML Gather               |
-| Send SMS         | `sms.py`                 | Uses Twilio `messages.create`   |
-| Receive SMS      | `/incoming-sms`          | Auto-response with Flask        |
-| WhatsApp         | Use `whatsapp:` numbers  | Similar to SMS                  |
-| Email            | SendGrid API             | Optional email alerts           |
-| Scheduler        | `scheduler.py` + JSON    | Reads schedule every minute     |
+| --------------- | ----------------------- | ------------------------------- |
+| Outgoing Call   | `voice_outgoing.py`     | Run directly via Python         |
+| Incoming Call   | `server.py`             | Webhook with IVR                |
+| Press 1 / 2 IVR | `/incoming-voice` route | Uses TwiML Gather               |
+| Send SMS        | `sms.py`                | Uses Twilio `messages.create`   |
+| Receive SMS     | `/incoming-sms`         | Auto-response with Flask        |
+| Scheduler       | `scheduler.py` + JSON   | Reads schedule every minute     |
+| Voice Assistant | `voice_assistant.py`    | AI-powered voice assistant flow |
 
 ---
-
-## 👨‍💻 Author
-
-Made with ❤️ for KT Sessions  
-📍 Focused on India Twilio integrations  
-🌐 [OpenAI Developer Tools](https://platform.openai.com/)
