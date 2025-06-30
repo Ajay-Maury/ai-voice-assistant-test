@@ -15,6 +15,9 @@ app = Flask(__name__)
 twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
 twilio_token = os.getenv("TWILIO_AUTH_TOKEN")
 twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
+print("Twilio SID:", twilio_sid)
+print("Twilio Token:", twilio_token)
+print("Twilio Number:", twilio_number)
 
 client = Client(twilio_sid, twilio_token)
 
@@ -55,7 +58,7 @@ def get_ai_response(user_input):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful voice assistant, Always respond respectfully.",
+                    "content": "You are a helpful voice assistant, Always respond respectfully. in one sentence only.",
                 },
                 {"role": "user", "content": user_input},
             ],
@@ -75,7 +78,7 @@ def voice():
         input="speech", action="/ai-response", method="POST", speechTimeout="auto"
     )
     gather.say(
-        "Hello, I am your AI assistant. How can I help you today?", voice="Polly.Joanna"
+        "Hello, I am your AI assistant. How can I help you today?", voice="Polly.Aditi"
     )
     # gather.say("नमस्ते, मैं आपकी एआई सहायक हूँ। मैं आपकी कैसे मदद कर सकती हूँ?", voice="Polly.Aditi", language="hi-IN")
     vr.append(gather)
@@ -106,7 +109,7 @@ def ai_response():
 
     if any(phrase in user_input.lower() for phrase in user_exit_phrases):
         vr = VoiceResponse()
-        vr.say("You may now hang up the call. Have a great day!", voice="Polly.Joanna")
+        vr.say("You may now hang up the call. Have a great day!", voice="Polly.Aditi")
         # vr.say("आप कॉल समाप्त कर सकते हैं। आपका दिन शुभ हो!", voice="Polly.Aditi", language="hi-IN")
         vr.hangup()
         return Response(str(vr), mimetype="text/xml")
@@ -116,7 +119,7 @@ def ai_response():
     print("AI Reply:", ai_reply)
 
     vr = VoiceResponse()
-    vr.say(ai_reply, voice="Polly.Joanna")
+    vr.say(ai_reply, voice="Polly.Aditi")
 
     # Check if the AI is ending the conversation
     # 🔚 Check if AI wants to end the call
@@ -128,7 +131,7 @@ def ai_response():
         # "कॉल समाप्त"
     ]
     if any(phrase in ai_reply.lower() for phrase in ai_exit_phrases):
-        vr.say("You may now hang up the call. Have a great day!", voice="Polly.Joanna")
+        vr.say("You may now hang up the call. Have a great day!", voice="Polly.Aditi")
         # vr.say("आप कॉल समाप्त कर सकते हैं। आपका दिन शुभ हो!", voice="Polly.Aditi", language="hi-IN")
         return Response(str(vr), mimetype="text/xml")
 
@@ -136,7 +139,7 @@ def ai_response():
     gather = Gather(
         input="speech", action="/ai-response", method="POST", speechTimeout="auto"
     )
-    gather.say("What else can I help you with?", voice="Polly.Joanna")
+    gather.say("What else can I help you with?", voice="Polly.Aditi")
     # gather.say("क्या मैं आपकी और कोई मदद कर सकती हूँ?", voice="Polly.Aditi", language="hi-IN")
     vr.append(gather)
     vr.redirect("/voice")
@@ -153,7 +156,7 @@ def make_call():
         return {"error": "Missing 'to' number"}, 400
 
     call = client.calls.create(
-        url="https://0059-2401-4900-88d0-fb6e-885b-e01-27e8-1c0a.ngrok-free.app/voice",  # change to your public webhook
+        url="https://b189-115-99-250-180.ngrok-free.app/voice",  # change to your public webhook
         to=to_number,
         from_=twilio_number,
     )
@@ -163,4 +166,4 @@ def make_call():
 
 # 🏁 Run server
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=8000)
