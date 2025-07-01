@@ -8,14 +8,16 @@ import io
 import tempfile
 import wave
 import struct
-from flask import Flask, request, Response
+import requests
+import uuid
+from flask import Flask, request, Response, send_file
 try:
     from flask_sockets import Sockets
     FLASK_SOCKETS_AVAILABLE = True
 except ImportError:
     FLASK_SOCKETS_AVAILABLE = False
 from twilio.rest import Client
-from twilio.twiml.voice_response import VoiceResponse, Gather, Connect, Stream
+from twilio.twiml.voice_response import VoiceResponse, Gather, Connect, Stream, Play
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -72,13 +74,22 @@ def safe_log(level, message, *args, **kwargs):
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
-PUBLIC_URL = os.getenv("PUBLIC_URL", "https://0b2c-115-99-250-180.ngrok-free.app")
+PUBLIC_URL = os.getenv("PUBLIC_URL", "https://3661-115-99-250-180.ngrok-free.app")
 
 # Validate required environment variables
 required_vars = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"]
 for var in required_vars:
     if not os.getenv(var):
         raise ValueError(f"Missing required environment variable: {var}")
+
+# ElevenLabs configuration
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Default voice (Rachel)
+ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_monolingual_v1")
+USE_ELEVENLABS = os.getenv("USE_ELEVENLABS", "false").lower() == "true"
+
+# Audio storage for generated files
+AUDIO_STORAGE = {}
 
 # OpenAI config with fallback support
 if os.getenv("OPENAI_API_KEY"):
@@ -102,6 +113,131 @@ client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 # Thread-safe map for WebSocket control and audio buffers
 STREAM_STATE = {}
 
+# --- ElevenLabs TTS Functions ---
+def generate_elevenlabs_audio(text: str) -> str:
+    """Generate audio using ElevenLabs API and return file path"""
+    try:
+        safe_log('info', f"Attempting ElevenLabs TTS for text: {text[:50]}...")
+        
+        if not ELEVENLABS_API_KEY:
+            safe_log('error', "ElevenLabs API key not configured")
+            return None
+        
+        if not ELEVENLABS_VOICE_ID:
+            safe_log('error', "ElevenLabs voice ID not configured")
+            return None
+            
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+        safe_log('info', f"ElevenLabs URL: {url}")
+        
+        headers = {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": ELEVENLABS_API_KEY
+        }
+        
+        data = {
+            "text": text,
+            "model_id": ELEVENLABS_MODEL_ID,
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.5,
+                "style": 0.0,
+                "use_speaker_boost": True
+            }
+        }
+        
+        safe_log('info', f"Making ElevenLabs API request with model: {ELEVENLABS_MODEL_ID}")
+        response = requests.post(url, json=data, headers=headers, timeout=30)
+        
+        safe_log('info', f"ElevenLabs API response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            # Generate unique filename
+            audio_id = str(uuid.uuid4())
+            filename = f"elevenlabs_{audio_id}.mp3"
+            filepath = os.path.join(tempfile.gettempdir(), filename)
+            
+            # Save audio file
+            with open(filepath, 'wb') as f:
+                f.write(response.content)
+            
+            # Store in memory for cleanup
+            AUDIO_STORAGE[audio_id] = filepath
+            
+            safe_log('info', f"Successfully generated ElevenLabs audio: {filename}, size: {len(response.content)} bytes")
+            return audio_id
+        else:
+            safe_log('error', f"ElevenLabs API error: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        safe_log('error', f"ElevenLabs generation error: {str(e)}")
+        return None
+
+@app.route('/audio/<audio_id>')
+def serve_audio(audio_id):
+    """Serve generated audio files"""
+    try:
+        if audio_id in AUDIO_STORAGE:
+            filepath = AUDIO_STORAGE[audio_id]
+            if os.path.exists(filepath):
+                def cleanup_after_send():
+                    # Clean up after serving
+                    try:
+                        os.unlink(filepath)
+                        AUDIO_STORAGE.pop(audio_id, None)
+                    except:
+                        pass
+                
+                # Schedule cleanup after response
+                threading.Timer(5.0, cleanup_after_send).start()
+                
+                return send_file(filepath, mimetype='audio/mpeg')
+        
+        return "Audio not found", 404
+    except Exception as e:
+        safe_log('error', f"Audio serving error: {str(e)}")
+        return "Error serving audio", 500
+
+# Test endpoint for ElevenLabs
+@app.route('/test-elevenlabs', methods=['GET', 'POST'])
+def test_elevenlabs():
+    """Test ElevenLabs API integration"""
+    try:
+        test_text = request.args.get('text', 'Hello, this is a test of ElevenLabs voice synthesis.')
+        
+        # Log configuration
+        safe_log('info', f"Testing ElevenLabs with:")
+        safe_log('info', f"API Key configured: {bool(ELEVENLABS_API_KEY)}")
+        safe_log('info', f"Voice ID: {ELEVENLABS_VOICE_ID}")
+        safe_log('info', f"Model ID: {ELEVENLABS_MODEL_ID}")
+        safe_log('info', f"USE_ELEVENLABS: {USE_ELEVENLABS}")
+        
+        if not USE_ELEVENLABS:
+            return {"error": "ElevenLabs is disabled. Set USE_ELEVENLABS=true in .env"}, 400
+        
+        if not ELEVENLABS_API_KEY:
+            return {"error": "ELEVENLABS_API_KEY not configured in .env"}, 400
+        
+        audio_id = generate_elevenlabs_audio(test_text)
+        
+        if audio_id:
+            audio_url = f"{PUBLIC_URL}/audio/{audio_id}"
+            return {
+                "success": True,
+                "audio_id": audio_id,
+                "audio_url": audio_url,
+                "text": test_text,
+                "message": "ElevenLabs audio generated successfully"
+            }
+        else:
+            return {"error": "Failed to generate audio with ElevenLabs"}, 500
+            
+    except Exception as e:
+        safe_log('error', f"ElevenLabs test error: {str(e)}")
+        return {"error": f"Test failed: {str(e)}"}, 500
+
 # --- Helper: generate TwiML with barge-in gather ---
 def twiml_with_reply(ai_reply: str, enable_stream: bool = False) -> str:
     vr = VoiceResponse()
@@ -118,7 +254,7 @@ def twiml_with_reply(ai_reply: str, enable_stream: bool = False) -> str:
         except Exception as e:
             safe_log('error', f"Failed to add WebSocket stream: {str(e)}")
 
-    # 2) Barge-in gather
+    # 2) Barge-in gather with voice selection
     gather = Gather(
         input="speech",
         bargeIn=True,
@@ -128,11 +264,31 @@ def twiml_with_reply(ai_reply: str, enable_stream: bool = False) -> str:
         profanityFilter="false",
         speechModel="phone_call"
     )
-    gather.say(ai_reply, voice="Polly.Aditi")
+    
+    # Use ElevenLabs or Polly based on configuration
+    if USE_ELEVENLABS and ELEVENLABS_API_KEY:
+        audio_id = generate_elevenlabs_audio(ai_reply)
+        if audio_id:
+            gather.play(f"{PUBLIC_URL}/audio/{audio_id}")
+        else:
+            # Fallback to Polly if ElevenLabs fails
+            gather.say(ai_reply, voice="Polly.Kajal-Generative")
+    else:
+        gather.say(ai_reply, voice="Polly.Kajal-Generative")
+    
     vr.append(gather)
     
     # Fallback if no speech detected
-    vr.say("I didn't hear anything. Please try again.", voice="Polly.Aditi")
+    fallback_text = "I didn't hear anything. Please try again."
+    if USE_ELEVENLABS and ELEVENLABS_API_KEY:
+        fallback_audio_id = generate_elevenlabs_audio(fallback_text)
+        if fallback_audio_id:
+            vr.play(f"{PUBLIC_URL}/audio/{fallback_audio_id}")
+        else:
+            vr.say(fallback_text, voice="Polly.Kajal-Generative")
+    else:
+        vr.say(fallback_text, voice="Polly.Kajal-Generative")
+    
     vr.redirect(f"{PUBLIC_URL}/voice")
     
     return str(vr)
@@ -161,7 +317,17 @@ def ai_response():
         # Exit phrases
         if any(phrase in user_input.lower() for phrase in ["goodbye", "hang up", "stop", "bye", "end call"]):
             vr = VoiceResponse()
-            vr.say("Goodbye! Have a great day!", voice="Polly.Aditi")
+            goodbye_text = "Goodbye! Have a great day!"
+            
+            if USE_ELEVENLABS and ELEVENLABS_API_KEY:
+                goodbye_audio_id = generate_elevenlabs_audio(goodbye_text)
+                if goodbye_audio_id:
+                    vr.play(f"{PUBLIC_URL}/audio/{goodbye_audio_id}")
+                else:
+                    vr.say(goodbye_text, voice="Polly.Kajal-Generative")
+            else:
+                vr.say(goodbye_text, voice="Polly.Kajal-Generative")
+            
             vr.hangup()
             return Response(str(vr), mimetype="text/xml")
 
@@ -176,7 +342,17 @@ def ai_response():
         safe_log('error', f"Error in ai_response: {str(e)}")
         # Return a safe fallback response instead of crashing
         vr = VoiceResponse()
-        vr.say("I'm sorry, I encountered an error. Please try again.", voice="Polly.Aditi")
+        error_text = "I'm sorry, I encountered an error. Please try again."
+        
+        if USE_ELEVENLABS and ELEVENLABS_API_KEY:
+            error_audio_id = generate_elevenlabs_audio(error_text)
+            if error_audio_id:
+                vr.play(f"{PUBLIC_URL}/audio/{error_audio_id}")
+            else:
+                vr.say(error_text, voice="Polly.Kajal-Generative")
+        else:
+            vr.say(error_text, voice="Polly.Kajal-Generative")
+        
         vr.redirect(f"{PUBLIC_URL}/voice")
         return Response(str(vr), mimetype="text/xml")
 
