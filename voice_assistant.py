@@ -9,7 +9,11 @@ import tempfile
 import wave
 import struct
 from flask import Flask, request, Response
-from flask_sockets import Sockets
+try:
+    from flask_sockets import Sockets
+    FLASK_SOCKETS_AVAILABLE = True
+except ImportError:
+    FLASK_SOCKETS_AVAILABLE = False
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse, Gather, Connect, Stream
 from openai import OpenAI
@@ -30,7 +34,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-sockets = Sockets(app)
+
+# Initialize sockets only if flask-sockets is available
+if FLASK_SOCKETS_AVAILABLE:
+    sockets = Sockets(app)
+else:
+    sockets = None
 
 # Safe logging helper function
 def safe_log(level, message, *args, **kwargs):
@@ -94,16 +103,20 @@ client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 STREAM_STATE = {}
 
 # --- Helper: generate TwiML with barge-in gather ---
-def twiml_with_reply(ai_reply: str, enable_stream: bool = True) -> str:
+def twiml_with_reply(ai_reply: str, enable_stream: bool = False) -> str:
     vr = VoiceResponse()
     
-    # 1) Start media stream (optional)
-    if enable_stream:
-        connect = Connect()
-        # Extract host from PUBLIC_URL or use request.host
-        stream_host = PUBLIC_URL.replace('https://', '').replace('http://', '') if PUBLIC_URL else request.host
-        connect.append(Stream(url=f"wss://{stream_host}/stream"))
-        vr.append(connect)
+    # 1) Start media stream (only if flask-sockets is working properly)
+    if enable_stream and FLASK_SOCKETS_AVAILABLE and sockets:
+        try:
+            connect = Connect()
+            # Extract host from PUBLIC_URL or use request.host
+            stream_host = PUBLIC_URL.replace('https://', '').replace('http://', '') if PUBLIC_URL else request.host
+            connect.append(Stream(url=f"wss://{stream_host}/stream"))
+            vr.append(connect)
+            safe_log('info', f"Added WebSocket stream to TwiML: wss://{stream_host}/stream")
+        except Exception as e:
+            safe_log('error', f"Failed to add WebSocket stream: {str(e)}")
 
     # 2) Barge-in gather
     gather = Gather(
@@ -157,7 +170,7 @@ def ai_response():
         if not ai_reply:
             ai_reply = "I'm sorry, I'm having trouble processing that. Could you please try again?"
             
-        return Response(twiml_with_reply(ai_reply, enable_stream=True), mimetype="text/xml")
+        return Response(twiml_with_reply(ai_reply, enable_stream=False), mimetype="text/xml")
         
     except Exception as e:
         safe_log('error', f"Error in ai_response: {str(e)}")
@@ -168,83 +181,100 @@ def ai_response():
         return Response(str(vr), mimetype="text/xml")
 
 # --- WebSocket: Media Stream ---
-@sockets.route('/stream')
-def media_stream(ws):
-    sid = None
-    buffer = io.BytesIO()
-    
-    # Initialize stream state with thread-safe access
-    stream_key = id(ws)  # Use websocket ID as temporary key
-    STREAM_STATE[stream_key] = {
-        'ws': ws, 
-        'buffer': buffer, 
-        'bot_talking': True,
-        'last_activity': time.time()
-    }
-    
-    try:
-        while not ws.closed:
-            msg = ws.receive()
-            if not msg:
-                break
-                
-            try:
-                data = json.loads(msg)
-            except json.JSONDecodeError as e:
-                safe_log('error', f"Invalid JSON received: {str(e)}")
-                continue
-                
-            event = data.get('event')
-            
-            if event == 'start':
-                sid = data.get('streamSid')
-                if sid:
-                    # Move state to proper SID key
-                    STREAM_STATE[sid] = STREAM_STATE.pop(stream_key, {})
-                    STREAM_STATE[sid].update({
-                        'ws': ws,
-                        'buffer': buffer,
-                        'bot_talking': True,
-                        'last_activity': time.time()
-                    })
-                    safe_log('info', f"Stream started with SID: {sid}")
-                    
-            elif event == 'media' and sid:
-                # Decode base64 payload and append to buffer
-                if sid in STREAM_STATE:
-                    payload = data.get('media', {}).get('payload', '')
-                    if payload:
-                        try:
-                            audio_data = base64.b64decode(payload)
-                            STREAM_STATE[sid]['buffer'].write(audio_data)
-                            STREAM_STATE[sid]['last_activity'] = time.time()
-                        except Exception as e:
-                            safe_log('error', f"Error processing audio data: {str(e)}")
-                            
-            elif event == 'stop' and sid:
-                # Process accumulated audio when stream stops
-                if sid in STREAM_STATE:
-                    buffer = STREAM_STATE[sid]['buffer']
-                    if buffer.tell() > 0:  # Only process if there's audio data
-                        transcript = whisper_transcribe(buffer)
-                        if transcript:
-                            safe_log('info', f"Whisper transcript: {transcript}")
-                            # Store transcript for potential use
-                            STREAM_STATE[sid]['last_transcript'] = transcript
-                        
-    except Exception as e:
-        safe_log('error', f"WebSocket error: {str(e)}")
-    finally:
-        # Clean up stream state
-        cleanup_keys = [k for k in [stream_key, sid] if k and k in STREAM_STATE]
-        for key in cleanup_keys:
-            STREAM_STATE.pop(key, None)
+# Add error handling for WebSocket routing
+@app.errorhandler(Exception)
+def handle_websocket_error(e):
+    if "WebsocketMismatch" in str(e):
+        safe_log('warning', f"WebSocket connection mismatch: {str(e)}")
+        return "WebSocket connection not supported", 400
+    return str(e), 500
+
+# WebSocket route (only if flask-sockets is available)
+if FLASK_SOCKETS_AVAILABLE and sockets:
+    @sockets.route('/stream')
+    def media_stream(ws):
+        sid = None
+        buffer = io.BytesIO()
         
-        if not ws.closed:
-            try:
-                ws.close()
-            except:
-                pass
+        # Initialize stream state with thread-safe access
+        stream_key = id(ws)  # Use websocket ID as temporary key
+        STREAM_STATE[stream_key] = {
+            'ws': ws, 
+            'buffer': buffer, 
+            'bot_talking': True,
+            'last_activity': time.time()
+        }
+        
+        try:
+            while not ws.closed:
+                msg = ws.receive()
+                if not msg:
+                    break
+                    
+                try:
+                    data = json.loads(msg)
+                except json.JSONDecodeError as e:
+                    safe_log('error', f"Invalid JSON received: {str(e)}")
+                    continue
+                    
+                event = data.get('event')
+                
+                if event == 'start':
+                    sid = data.get('streamSid')
+                    if sid:
+                        # Move state to proper SID key
+                        STREAM_STATE[sid] = STREAM_STATE.pop(stream_key, {})
+                        STREAM_STATE[sid].update({
+                            'ws': ws,
+                            'buffer': buffer,
+                            'bot_talking': True,
+                            'last_activity': time.time()
+                        })
+                        safe_log('info', f"Stream started with SID: {sid}")
+                        
+                elif event == 'media' and sid:
+                    # Decode base64 payload and append to buffer
+                    if sid in STREAM_STATE:
+                        payload = data.get('media', {}).get('payload', '')
+                        if payload:
+                            try:
+                                audio_data = base64.b64decode(payload)
+                                STREAM_STATE[sid]['buffer'].write(audio_data)
+                                STREAM_STATE[sid]['last_activity'] = time.time()
+                            except Exception as e:
+                                safe_log('error', f"Error processing audio data: {str(e)}")
+                                
+                elif event == 'stop' and sid:
+                    # Process accumulated audio when stream stops
+                    if sid in STREAM_STATE:
+                        buffer = STREAM_STATE[sid]['buffer']
+                        if buffer.tell() > 0:  # Only process if there's audio data
+                            transcript = whisper_transcribe(buffer)
+                            if transcript:
+                                safe_log('info', f"Whisper transcript: {transcript}")
+                                # Store transcript for potential use
+                                STREAM_STATE[sid]['last_transcript'] = transcript
+                            
+        except Exception as e:
+            safe_log('error', f"WebSocket error: {str(e)}")
+        finally:
+            # Clean up stream state
+            cleanup_keys = [k for k in [stream_key, sid] if k and k in STREAM_STATE]
+            for key in cleanup_keys:
+                STREAM_STATE.pop(key, None)
+            
+            if not ws.closed:
+                try:
+                    ws.close()
+                except:
+                    pass
+
+else:
+    # Fallback: Create a dummy endpoint if WebSocket is not available
+    @app.route('/stream', methods=['GET', 'POST'])
+    def stream_fallback():
+        safe_log('warning', "WebSocket stream requested but flask-sockets not available")
+        return "WebSocket streaming not available", 501
 
 # --- Audio format conversion helper ---
 def convert_mulaw_to_wav(mulaw_data: bytes) -> bytes:
