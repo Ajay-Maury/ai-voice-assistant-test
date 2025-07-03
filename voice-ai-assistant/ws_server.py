@@ -3,16 +3,15 @@ import websockets
 import json
 import base64
 import os
-import numpy as np
 from utils.audio_utils import save_audio_chunk, silent_detected, transcribe_audio_azure, transcribe_audio_whisper
 from utils.ai_utils import get_ai_response
 from utils.azure_tts import synthesize_azure_tts_to_pcm
 from utils.redis_utils import get_context, store_context
-from config.settings import AUDIO_CHUNK_DIR
+from config.settings import AUDIO_BUFFER_SILENCE, AUDIO_CHUNK_DIR, AUDIO_CHUNK_SIZE, MIN_AUDIO_BYTES
 
 
 async def stream_tts_audio(websocket, stream_sid, audio_bytes, call_sid, stop_event):
-    chunk_size = 160
+    chunk_size = AUDIO_CHUNK_SIZE
     for i in range(0, len(audio_bytes), chunk_size):
         if stop_event.is_set():
             print(f"[TTS-{call_sid}]: Playback interrupted by user")
@@ -71,7 +70,8 @@ async def handler(websocket, path):
             now = asyncio.get_event_loop().time()
             elapsed = now - last_audio_time
 
-            if buffer and tts_task and not tts_task.done():
+            # Barge-in logic
+            if len(buffer) > MIN_AUDIO_BYTES and tts_task and not tts_task.done():
                 tts_stop_event.set()
                 await wait_for_tts_cleanup(tts_task)
                 if websocket.open:
@@ -88,7 +88,8 @@ async def handler(websocket, path):
                         )
                     )
 
-            if buffer and elapsed >= 2:
+            # Silence timeout logic
+            if len(buffer) > MIN_AUDIO_BYTES and elapsed >= AUDIO_BUFFER_SILENCE:
                 try:
                     audio_file = save_audio_chunk(call_sid, buffer)
                     buffer = b""
@@ -171,15 +172,16 @@ async def handler(websocket, path):
             except asyncio.CancelledError:
                 print(f"[Cleanup-{call_sid}]: Silence task cancelled")
 
-        # # Remove files
-        # for filename in os.listdir(AUDIO_CHUNK_DIR):
-        #     file_path = os.path.join(AUDIO_CHUNK_DIR, filename)
-        #     try:
-        #         if os.path.isfile(file_path):
-        #             os.remove(file_path)
-        #             # print(f"[Cleanup-{call_sid}]: Removed {file_path}")
-        #     except Exception as e:
-        #         print(f"[Cleanup-{call_sid}]: File removal error: {e}")
+        # Remove files
+        for filename in os.listdir(AUDIO_CHUNK_DIR):
+            if filename.startswith(f"{call_sid}_"):
+                file_path = os.path.join(AUDIO_CHUNK_DIR, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                        # print(f"[Cleanup-{call_sid}]: Removed {file_path}")
+                except Exception as e:
+                    print(f"[Cleanup-{call_sid}]: File removal error: {e}")
 
         try:
             if websocket.open:

@@ -31,3 +31,7 @@ os.makedirs(AUDIO_CHUNK_DIR, exist_ok=True)
 AUDIO_RMS_THRESHOLD = 150.0  # RMS threshold for silence detection
 AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz)
 AUDIO_SAMPLE_RATE = 8000  # Sample rate for audio
+
+AUDIO_BUFFER_SILENCE = 2  # Seconds of silence to wait before processing audio
+MIN_AUDIO_BYTES = 1000  # ≈ 0.125 seconds of μ-law audio at 8kHz
+
