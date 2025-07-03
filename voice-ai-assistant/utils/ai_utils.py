@@ -1,25 +1,27 @@
-import os
 from openai import AzureOpenAI
-from dotenv import load_dotenv
-
-load_dotenv()
+from config.settings import (
+    AI_SYSTEM_PROMPT,
+    AZURE_OPENAI_API_KEY,
+    AZURE_OPENAI_API_VERSION,
+    AZURE_OPENAI_ENDPOINT,
+    AZURE_OPENAI_MODEL,
+)
 
 azure_client = AzureOpenAI(
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-    azure_endpoint=str(os.getenv("AZURE_OPENAI_ENDPOINT")),
+    api_key=AZURE_OPENAI_API_KEY,
+    api_version=AZURE_OPENAI_API_VERSION,
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
 )
-azure_model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-35-turbo")
+azure_model = AZURE_OPENAI_MODEL
 
 
 def get_ai_response(user_input, context=[]):
     try:
         print("User input:", user_input)
-        print("Context:", context)
         messages = [
             {
                 "role": "system",
-                "content": "You are a friendly, conversational human assistant. Respond naturally and warmly, as if you are speaking to a friend. Keep responses concise and conversational, suitable for voice interaction. Limit responses to 1-2 sentences.",
+                "content": AI_SYSTEM_PROMPT,
             }
         ]
         for u, a in context:
@@ -29,7 +31,7 @@ def get_ai_response(user_input, context=[]):
 
         response = azure_client.chat.completions.create(
             model=azure_model,
-            messages=messages,
+            messages=messages, # type: ignore
         )
         content = response.choices[0].message.content
         return content.strip() if content is not None else ""

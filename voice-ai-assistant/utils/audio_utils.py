@@ -1,45 +1,32 @@
 import os
 import uuid
-import wave
 import whisper
 import subprocess
 import numpy as np
-
 import azure.cognitiveservices.speech as speechsdk
-from dotenv import load_dotenv
+from config.settings import (
+    AUDIO_CHUNK_DIR,
+    AUDIO_RMS_THRESHOLD,
+    AZURE_STT_SUBSCRIPTION_KEY,
+    AZURE_STT_REGION,
+)
 
-load_dotenv()
-
-
-AZURE_SPEECH_KEY = os.getenv("AZURE_STT_SUBSCRIPTION_KEY")
-AZURE_SERVICE_REGION = os.getenv("AZURE_STT_REGION")
-
-# You can define a list of possible languages
-POSSIBLE_LANGUAGES = ["en-IN", "en-US", "hi-IN", "ta-IN", "te-IN"]
 
 # Silence detector
-def is_silent(pcm_data, threshold=100):
+def silent_detected(pcm_data, threshold=AUDIO_RMS_THRESHOLD):
     if len(pcm_data) < 2:
-        return True  # Not enough data to be meaningful
-
+        return True
     pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
-
     if pcm_array.size == 0:
-        return True  # Definitely silent
-
-    mean_square = np.mean(np.square(pcm_array.astype(np.float32)))
-    if np.isnan(mean_square) or mean_square <= 0:
-        return True  # Invalid or no signal
-
-    rms = np.sqrt(mean_square)
-    print(f"[Silence Check]: RMS={rms:.2f}")
+        return True
+    rms = np.sqrt(np.mean(np.square(pcm_array))) or 0.0
+    if not rms < threshold:
+        print(f"[DEBUG] RMS: {rms}, Threshold: {threshold}")
     return rms < threshold
 
-AUDIO_DIR = "audio_chunks"
-os.makedirs(AUDIO_DIR, exist_ok=True)
 
 def save_audio_chunk(call_sid, audio_bytes):
-    raw_path = os.path.join(AUDIO_DIR, f"{call_sid}_{uuid.uuid4()}.raw")
+    raw_path = os.path.join(AUDIO_CHUNK_DIR, f"{call_sid}_{uuid.uuid4()}.raw")
     wav_path = raw_path.replace(".raw", ".wav")
 
     # Save raw μ-law audio (as received from Twilio)
@@ -50,38 +37,42 @@ def save_audio_chunk(call_sid, audio_bytes):
     try:
         subprocess.run([
             "ffmpeg",
-            "-f", "mulaw",
-            "-ar", "8000",
-            "-ac", "1",
-            "-i", raw_path,
-            "-ar", "16000",
-            "-ac", "1",
-            "-f", "wav",
-            wav_path
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            "-f", "mulaw",         # input format
+            "-ar", "8000",         # input sample rate
+            "-ac", "1",            # input channels
+            "-i", raw_path,        # input file
+            "-ar", "16000",        # output sample rate (for ASR)
+            "-ac", "1",            # mono
+            "-c:a", "pcm_s16le",   # force 16-bit PCM
+            # "-f", "wav",           # Output format is WAV
+            wav_path               # output file
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # Suppress output and raise error if conversion fails
+
     except Exception as e:
         print(f"[ERROR] Failed to convert audio: {e}")
         return None
-    finally:
-        if os.path.exists(raw_path):
-            os.remove(raw_path)
+    # finally:
+    #     if os.path.exists(raw_path):
+    #         os.remove(raw_path)
 
     return wav_path
 
-def transcribe_audio(filepath):
+
+def transcribe_audio_whisper(filepath):
     try:
-        model = whisper.load_model("medium")
+        model = whisper.load_model("base")
         result = model.transcribe(filepath, language="en")
         return " ".join(result["text"]).strip() if isinstance(result["text"], list) else result["text"].strip()
     except Exception as e:
         print("Whisper error:", e)
         return ""
 
-def transcribe_audio_azure(filepath, language="en-US"):
+
+def transcribe_audio_azure(filepath, language="en-IN"):
     try:
         speech_config = speechsdk.SpeechConfig(
-            subscription=AZURE_SPEECH_KEY,
-            region=AZURE_SERVICE_REGION
+            subscription=AZURE_STT_SUBSCRIPTION_KEY,
+            region=AZURE_STT_REGION
         )
         speech_config.speech_recognition_language = language
 

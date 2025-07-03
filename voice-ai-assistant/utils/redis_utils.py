@@ -1,13 +1,13 @@
 import redis
-import os
 import json
+from config.settings import REDIS_URL
 
-r = redis.from_url(os.getenv("REDIS_URL"))
+r = redis.from_url(REDIS_URL)
 
 def store_context(call_sid, user_input, ai_reply):
     context = r.get(call_sid)
     if context:
-        context = json.loads(context)
+        context = json.loads(context) # type: ignore
     else:
         context = []
     context.append({"role": "user", "content": user_input})
@@ -16,4 +16,4 @@ def store_context(call_sid, user_input, ai_reply):
 
 def get_context(call_sid):
     context = r.get(call_sid)
-    return json.loads(context) if context else []
+    return json.loads(context) if context else [] # type: ignore
