@@ -28,6 +28,9 @@ AI_SYSTEM_PROMPT = "You are a friendly, conversational human assistant. Respond 
 AUDIO_CHUNK_DIR = "audio_chunks"
 os.makedirs(AUDIO_CHUNK_DIR, exist_ok=True)
 
+RESPONSE_AUDIO_CHUNK_DIR = "response_audio_chunks"
+os.makedirs(RESPONSE_AUDIO_CHUNK_DIR, exist_ok=True)
+
 AUDIO_RMS_THRESHOLD = 150.0  # RMS threshold for silence detection
 AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz)
 AUDIO_SAMPLE_RATE = 8000  # Sample rate for audio

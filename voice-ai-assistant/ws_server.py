@@ -54,6 +54,7 @@ async def wait_for_tts_cleanup(task):
 async def handler(websocket, path):
     print("[+] WebSocket connected")
     buffer = b""
+    raw_buffer = b""
     call_sid = None
     stream_sid = None
     tts_task = None
@@ -64,14 +65,15 @@ async def handler(websocket, path):
 
     async def detect_silence():
         print(f"[Silence-{call_sid}]: Starting silence detection")
-        nonlocal buffer, last_audio_time, tts_task
+        nonlocal buffer, last_audio_time, tts_task, raw_buffer
         while not handler_stop_event.is_set():
             await asyncio.sleep(0.25)
             now = asyncio.get_event_loop().time()
             elapsed = now - last_audio_time
 
             # Barge-in logic
-            if len(buffer) > MIN_AUDIO_BYTES and tts_task and not tts_task.done():
+            if len(raw_buffer) > MIN_AUDIO_BYTES and tts_task and not tts_task.done():
+                print(f"[Barge-in-{call_sid}]: User interrupted TTS playback")
                 tts_stop_event.set()
                 await wait_for_tts_cleanup(tts_task)
                 if websocket.open:
@@ -89,10 +91,12 @@ async def handler(websocket, path):
                     )
 
             # Silence timeout logic
-            if len(buffer) > MIN_AUDIO_BYTES and elapsed >= AUDIO_BUFFER_SILENCE:
+            if len(raw_buffer) > MIN_AUDIO_BYTES and elapsed >= AUDIO_BUFFER_SILENCE:
+                print(f"[Silence-{call_sid}]: Silence detected {elapsed}, processing audio")
                 try:
                     audio_file = save_audio_chunk(call_sid, buffer)
                     buffer = b""
+                    raw_buffer = b""
                     # text = transcribe_audio_azure(audio_file)
                     text = transcribe_audio_whisper(audio_file)
                     if not text:
@@ -136,11 +140,12 @@ async def handler(websocket, path):
                     continue
                 audio_b64 = data["media"]["payload"]
                 new_chunk = base64.b64decode(audio_b64)
+                buffer += new_chunk
 
                 if silent_detected(new_chunk):
                     continue
 
-                buffer += new_chunk
+                raw_buffer += new_chunk
                 last_audio_time = asyncio.get_event_loop().time()
 
             elif event == "stop":
