@@ -1,18 +1,14 @@
-from openai import AzureOpenAI
+from openai import OpenAI
 from config.settings import (
     AI_SYSTEM_PROMPT,
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_API_VERSION,
-    AZURE_OPENAI_ENDPOINT,
-    AZURE_OPENAI_MODEL,
+    OPENAI_API_KEY,
+    OPENAI_MODEL,
 )
 
-azure_client = AzureOpenAI(
-    api_key=AZURE_OPENAI_API_KEY,
-    api_version=AZURE_OPENAI_API_VERSION,
-    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+openai_client = OpenAI(
+    api_key=OPENAI_API_KEY,
 )
-azure_model = AZURE_OPENAI_MODEL
+openai_model = OPENAI_MODEL
 
 
 def get_ai_response(user_input, context=[]):
@@ -29,12 +25,12 @@ def get_ai_response(user_input, context=[]):
             messages.append({"role": "assistant", "content": a})
         messages.append({"role": "user", "content": user_input})
 
-        response = azure_client.chat.completions.create(
-            model=azure_model,
+        response = openai_client.chat.completions.create(
+            model=openai_model,
             messages=messages, # type: ignore
         )
         content = response.choices[0].message.content
         return content.strip() if content is not None else ""
     except Exception as e:
-        print("Azure OpenAI error:", e)
+        print("OpenAI error:", e)
         return "Sorry, something went wrong."

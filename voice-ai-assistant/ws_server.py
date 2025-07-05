@@ -12,7 +12,7 @@ from utils.audio_utils import (
     transcribe_audio_whisper
 )
 from utils.ai_utils import get_ai_response
-from utils.azure_tts import synthesize_azure_tts_to_pcm
+from utils.openai_tts import synthesize_openai_tts_to_pcm
 from utils.redis_utils import get_context, store_context
 
 # App configuration
@@ -118,8 +118,7 @@ async def handler(websocket, path):
                     buffer = b""
                     raw_buffer = b""
 
-                    # Transcribe using Whisper (or switch to Azure if needed)
-                    # text = transcribe_audio_azure(audio_file)
+                    # Transcribe using OpenAI Whisper
                     text = transcribe_audio_whisper(audio_file)
 
                     if not text:
@@ -133,8 +132,8 @@ async def handler(websocket, path):
                     print("[AI Reply]:", ai_reply)
                     store_context(call_sid, text, ai_reply)
 
-                    # Convert AI response to audio via Azure TTS
-                    tts_audio = synthesize_azure_tts_to_pcm(ai_reply)
+                    # Convert AI response to audio via OpenAI TTS
+                    tts_audio = synthesize_openai_tts_to_pcm(ai_reply)
 
                     # Stream TTS audio back to the client
                     if tts_audio:

@@ -1,14 +1,13 @@
 import os
 import uuid
-import whisper
 import subprocess
 import numpy as np
-import azure.cognitiveservices.speech as speechsdk
+from openai import OpenAI
 from config.settings import (
     AUDIO_CHUNK_DIR,
     AUDIO_RMS_THRESHOLD,
-    AZURE_STT_SUBSCRIPTION_KEY,
-    AZURE_STT_REGION,
+    OPENAI_API_KEY,
+    OPENAI_STT_MODEL,
 )
 
 
@@ -60,11 +59,17 @@ def save_audio_chunk(call_sid, audio_bytes):
 
 def transcribe_audio_whisper(filepath):
     try:
-        model = whisper.load_model("base")
-        result = model.transcribe(filepath, language="en")
-        return " ".join(result["text"]).strip() if isinstance(result["text"], list) else result["text"].strip()
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        
+        with open(filepath, "rb") as audio_file:
+            result = client.audio.transcriptions.create(
+                model=OPENAI_STT_MODEL,
+                file=audio_file,
+                language="en"
+            )
+        return result.text.strip() if result.text else ""
     except Exception as e:
-        print("Whisper error:", e)
+        print("OpenAI Whisper error:", e)
         return ""
 
 

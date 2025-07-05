@@ -5,9 +5,13 @@ from config.settings import (
     TWILIO_SID,
     TWILIO_TOKEN,
     TWILIO_NUMBER,
-    VOICE_ROUTE_URL,
-    WEB_SOCKET_URL,
+    # VOICE_ROUTE_URL,
+    # WEB_SOCKET_URL,
 )
+
+WEB_SOCKET_URL="wss://myvoicews.loca.lt"
+VOICE_ROUTE_URL="https://cae4-115-96-179-103.ngrok-free.app/voice"
+
 
 print("Starting Flask app...")
 print("WebSocket URL:", WEB_SOCKET_URL)
@@ -52,4 +56,4 @@ def make_call():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5001)
