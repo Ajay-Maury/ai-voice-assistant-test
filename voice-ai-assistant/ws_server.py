@@ -12,7 +12,7 @@ from utils.audio_utils import (
     transcribe_audio_whisper
 )
 from utils.ai_utils import get_ai_response
-from utils.openai_tts import synthesize_openai_tts_to_pcm
+from utils.openai_tts import synthesize_openai_tts_to_pcm, stream_openai_tts
 from utils.redis_utils import get_context, store_context
 
 # App configuration
@@ -49,6 +49,58 @@ async def stream_tts_audio(websocket, stream_sid, audio_bytes, call_sid, stop_ev
 
     # Signal to the client that the TTS playback is complete
     if not stop_event.is_set():
+        await websocket.send(
+            json.dumps({
+                "event": "mark",
+                "streamSid": stream_sid,
+                "mark": {"name": "tts_complete"},
+            })
+        )
+
+
+# Stream TTS audio directly from OpenAI to client via WebSocket
+async def stream_tts_real_time(websocket, stream_sid, text, call_sid, stop_event):
+    print(f"[TTS-{call_sid}]: Starting real-time TTS streaming")
+    
+    # Get streaming TTS generator
+    audio_chunk_generator = await stream_openai_tts(text)
+    if not audio_chunk_generator:
+        print(f"[TTS-{call_sid}]: Failed to create TTS stream")
+        return
+    
+    # Process each audio chunk as it becomes available
+    try:
+        async for mulaw_chunk in audio_chunk_generator:
+            if stop_event.is_set():
+                print(f"[TTS-{call_sid}]: Playback interrupted by user")
+                break
+            
+            # Send the chunk in smaller pieces for smooth playback
+            chunk_size = AUDIO_CHUNK_SIZE
+            for i in range(0, len(mulaw_chunk), chunk_size):
+                if stop_event.is_set():
+                    break
+                
+                sub_chunk = mulaw_chunk[i : i + chunk_size]
+                try:
+                    await websocket.send(
+                        json.dumps({
+                            "event": "media",
+                            "streamSid": stream_sid,
+                            "media": {"payload": base64.b64encode(sub_chunk).decode()},
+                        })
+                    )
+                except websockets.exceptions.ConnectionClosed:
+                    print(f"[TTS-{call_sid}]: WebSocket closed during playback")
+                    return
+                
+                await asyncio.sleep(0.01)  # Faster playback rate for smoother audio
+    
+    except Exception as e:
+        print(f"[TTS-{call_sid}]: Streaming error: {e}")
+    
+    # Signal to the client that the TTS playback is complete
+    if not stop_event.is_set() and websocket.open:
         await websocket.send(
             json.dumps({
                 "event": "mark",
@@ -132,21 +184,17 @@ async def handler(websocket, path):
                     print("[AI Reply]:", ai_reply)
                     store_context(call_sid, text, ai_reply)
 
-                    # Convert AI response to audio via OpenAI TTS
-                    tts_audio = synthesize_openai_tts_to_pcm(ai_reply)
-
-                    # Stream TTS audio back to the client
-                    if tts_audio:
-                        tts_stop_event.clear()
-                        tts_task = asyncio.create_task(
-                            stream_tts_audio(
-                                websocket,
-                                stream_sid,
-                                tts_audio,
-                                call_sid,
-                                tts_stop_event,
-                            )
+                    # Use streaming TTS for faster response
+                    tts_stop_event.clear()
+                    tts_task = asyncio.create_task(
+                        stream_tts_real_time(
+                            websocket,
+                            stream_sid,
+                            ai_reply,
+                            call_sid,
+                            tts_stop_event,
                         )
+                    )
                 except Exception as e:
                     print(f"[Silence-{call_sid}]: Error during processing: {e}")
 
