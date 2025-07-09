@@ -8,6 +8,8 @@ from typing import List
 import aiohttp
 import redis
 
+from utils.audio_utils import is_mulaw_silent
+
 # --- Config & environment variables ---
 from config.settings import (
     AI_SYSTEM_PROMPT, AUDIO_BUFFER_SILENCE, AUDIO_CHUNK_SIZE,
@@ -97,7 +99,7 @@ async def safe_send(ws, lock: asyncio.Lock, data: dict):
         msg = json.dumps(data)
         async with lock:
             await ws.send(msg)
-        print(f"[WS] Sent: {data.get('event')} | {data.get('mark') or ''}")
+        # print(f"[WS] Sent: {data.get('event')} | {data.get('mark') or ''}")
     except Exception as e:
         print(f"[WS][ERROR] Failed to send message: {e}")
 
@@ -126,13 +128,14 @@ async def handler(websocket, path):
 
             if talking:
                 silent_since = None
-                if speech_start and now - speech_start >= 1.5 and now - last_backchannel >= 1.5 and not tts_active:
-                    text = random.choice(ENGAGEMENT_RESPONSES["ENGAGED"])
-                    print(f"[ENGAGE] Triggered engaged response: {text}")
-                    last_backchannel = now
-                    tts_type = "engagement"
-                    tts_stop.clear()
-                    tts_task = asyncio.create_task(stream_tts_to_twilio(text))
+                if not tts_active and now - last_backchannel >= 1.5:
+                    if speech_start > 0 and (now - speech_start >= 1.5):
+                        text = random.choice(ENGAGEMENT_RESPONSES["ENGAGED"])
+                        print(f"[ENGAGE] Triggered engaged response: {text}")
+                        last_backchannel = now
+                        tts_type = "engagement"
+                        tts_stop.clear()
+                        tts_task = asyncio.create_task(stream_tts_to_twilio(text))
             else:
                 if silent_since is None:
                     silent_since = now
@@ -144,15 +147,15 @@ async def handler(websocket, path):
                     tts_stop.clear()
                     tts_task = asyncio.create_task(stream_tts_to_twilio(text))
 
-    async def silence_detector():
+    async def barge_in_handler():
         nonlocal buffer, raw_buffer, last_audio_time, speech_start, tts_task, tts_type
-        print("[STT] Silence detector started.")
+        print("[STT] Barge-in handler started.")
         while not handler_stop.is_set():
             await asyncio.sleep(0.25)
             now = asyncio.get_event_loop().time()
             elapsed = now - last_audio_time
 
-            if raw_buffer and tts_task and not tts_task.done() and tts_type == "ai_reply":
+            if len(raw_buffer) > MIN_AUDIO_BYTES and tts_task and not tts_task.done():
                 print("[STT][BARGE-IN] User barge-in detected. Interrupting TTS.")
                 tts_stop.set()
                 try:
@@ -165,18 +168,18 @@ async def handler(websocket, path):
                 })
                 raw_buffer = b""
 
-            if raw_buffer and elapsed >= AUDIO_BUFFER_SILENCE:
-                print(f"[STT] Silence threshold hit. Sending to AI.")
-                payload_b64 = base64.b64encode(buffer).decode()
-                buffer = raw_buffer = b""
-                speech_start = 0.0
-                ctx = get_context(call_sid)
-                user_text = "<audio>"  # Placeholder
-                ai_text = await get_ai_response(user_text, ctx)
-                store_context(call_sid, user_text, ai_text)
-                tts_stop.clear()
-                tts_type = "ai_reply"
-                tts_task = asyncio.create_task(stream_tts_to_twilio(ai_text))
+            # if len(raw_buffer) > MIN_AUDIO_BYTES and elapsed >= AUDIO_BUFFER_SILENCE:
+            #     print(f"[STT] Silence threshold hit. Sending to AI.")
+            #     payload_b64 = base64.b64encode(buffer).decode()
+            #     buffer = raw_buffer = b""
+            #     speech_start = 0.0
+            #     ctx = get_context(call_sid)
+            #     user_text = "<audio>"  # Placeholder
+            #     ai_text = await get_ai_response(user_text, ctx)
+            #     store_context(call_sid, user_text, ai_text)
+            #     tts_stop.clear()
+            #     tts_type = "ai_reply"
+            #     tts_task = asyncio.create_task(stream_tts_to_twilio(ai_text))
 
     async def receive_and_stream_ai():
         nonlocal call_sid, stream_sid, buffer, raw_buffer, speech_start
@@ -220,7 +223,7 @@ async def handler(websocket, path):
             await ai_ws.send(json.dumps({"type": "response.create"}))
 
             engagement_task = asyncio.create_task(engagement_monitor())
-            silence_task = asyncio.create_task(silence_detector())
+            silence_task = asyncio.create_task(barge_in_handler())
 
             try:
                 async for msg_str in websocket:
@@ -234,11 +237,17 @@ async def handler(websocket, path):
                     elif evt == "media":
                         chunk = base64.b64decode(data["media"]["payload"])
                         buffer += chunk
-                        raw_buffer += chunk
-                        now = asyncio.get_event_loop().time()
-                        if speech_start == 0.0:
-                            speech_start = now
-                        last_audio_time = now
+                        # Skip silent chunks
+                        if not is_mulaw_silent(chunk):
+                            # continue
+
+                            # Append to raw buffer and reset silence timer
+                            raw_buffer += chunk
+
+                            now = asyncio.get_event_loop().time()
+                            if speech_start == 0.0:
+                                speech_start = now
+                            last_audio_time = now
                         await ai_ws.send(json.dumps({
                             "type": "input_audio_buffer.append",
                             "audio": data["media"]["payload"]
@@ -276,7 +285,7 @@ async def handler(websocket, path):
                 print("[HANDLER] Session cleanup complete.")
 
     async def stream_tts_to_twilio(text: str):
-        print(f"[TTS] Starting stream to Twilio...")
+        print(f"[TTS] Starting stream to Twilio... for text: {text[:60]}")
         generator = get_ai_tts_stream(text)
         async for chunk in generator:
             if tts_stop.is_set():
