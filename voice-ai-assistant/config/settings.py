@@ -1,7 +1,69 @@
 import os
+import hashlib
+import aiohttp
+import asyncio
+import subprocess
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+ENGAGEMENT_AUDIO_DIR = "static/engagement_audios"
+os.makedirs(ENGAGEMENT_AUDIO_DIR, exist_ok=True)
+
+async def get_engagement_audio(text: str) -> str:
+    filename = hashlib.md5(text.encode()).hexdigest()
+    print(f"[ENGAGE] Fetching audio for: {text} (filename: {filename})")
+    mulaw_path = os.path.join(ENGAGEMENT_AUDIO_DIR, f"{filename}.mulaw")
+    pcm_path = os.path.join(ENGAGEMENT_AUDIO_DIR, f"{filename}.pcm")
+
+    if os.path.exists(mulaw_path):
+        print(f"[ENGAGE][CACHE HIT] {text}")
+        return mulaw_path
+
+    print(f"[ENGAGE][CACHE MISS] Generating audio for: {text}")
+
+    # Call OpenAI TTS API
+    url = "https://api.openai.com/v1/audio/speech"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+        "OpenAI-Beta": "assistants=v2"
+    }
+    payload = {
+        "model": OPENAI_TTS_MODEL,
+        "voice": OPENAI_TTS_VOICE,
+        "input": text,
+        "response_format": "pcm"
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            if resp.status != 200:
+                raise Exception(f"TTS failed: {await resp.text()}")
+            with open(pcm_path, "wb") as f:
+                async for chunk in resp.content.iter_chunked(1024):
+                    f.write(chunk)
+
+    # Convert PCM (24kHz) → μ-law (8kHz mono) using ffmpeg
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-f", "s16le", "-ar", "24000", "-ac", "1",
+            "-i", pcm_path,
+            "-ar", "8000", "-ac", "1", "-f", "mulaw",
+            mulaw_path
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[ENGAGE][CACHE SAVE] {mulaw_path}")
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"FFmpeg conversion failed: {e}")
+    finally:
+        if os.path.exists(pcm_path):
+            os.remove(pcm_path)
+
+    return mulaw_path
+
 
 TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
