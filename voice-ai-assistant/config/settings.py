@@ -31,7 +31,7 @@ AUDIO_SILENCE_THRESHOLDS = {
 }
 
 AUDIO_RMS_THRESHOLD = 150.0  # RMS threshold for silence detection
-AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz)
+AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz) 
 AUDIO_SAMPLE_RATE = 8000  # Sample rate for audio
 
 AUDIO_BUFFER_SILENCE = 2  # Seconds of silence to wait before processing audio
@@ -41,3 +41,13 @@ ENGAGEMENT_RESPONSES = {
     "ENGAGED": ["hmm", "okay", "got it", "yeah"],
     "DISENGAGED": ["Are you there?", "Still with me?", "Can you hear me?"],
 }
+
+ENGAGEMENT_RESPONSES_HINDI = {
+    "ENGAGED": ["हम्म", "अच्छा", "ठीक है", "ओके"],
+    "DISENGAGED": ["क्या आप वहाँ हैं?", "क्या आप अभी भी लाइन पर हैं?", "क्या मेरी बात सुन पा रहे हैं?"],
+}
+
+SARVAM_SUBSCRIPTION_KEY=os.getenv("SARVAM_SUBSCRIPTION_KEY")
+SARVAM_VOICE=os.getenv("SARVAM_VOICE", "anushka")
+SARVAM_LANGUAGE=os.getenv("SARVAM_LANGUAGE", "hi-IN")
+SARVAM_MODEL=os.getenv("SARVAM_MODEL", "bulbul:v2")

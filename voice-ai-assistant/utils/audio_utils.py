@@ -140,7 +140,9 @@ def transcribe_audio_whisper(filepath):
 
         with open(filepath, "rb") as audio_file:
             result = client.audio.transcriptions.create(
-                model=OPENAI_STT_MODEL, file=audio_file, language="en"
+                model=OPENAI_STT_MODEL, 
+                file=audio_file, 
+                language="hi"
             )
         return result.text.strip() if result.text else ""
     except Exception as e:
