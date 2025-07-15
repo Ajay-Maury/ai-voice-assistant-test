@@ -38,16 +38,20 @@ AUDIO_BUFFER_SILENCE = 2  # Seconds of silence to wait before processing audio
 MIN_AUDIO_BYTES = 1000  # ≈ 0.125 seconds of μ-law audio at 8kHz
 
 ENGAGEMENT_RESPONSES = {
-    "ENGAGED": ["hmm", "okay", "got it", "yeah"],
-    "DISENGAGED": ["Are you there?", "Still with me?", "Can you hear me?"],
-}
-
-ENGAGEMENT_RESPONSES_HINDI = {
-    "ENGAGED": ["हम्म", "अच्छा", "ठीक है", "ओके"],
-    "DISENGAGED": ["क्या आप वहाँ हैं?", "क्या आप अभी भी लाइन पर हैं?", "क्या मेरी बात सुन पा रहे हैं?"],
+    "ENGAGED": {
+        "en": ["hmm", "okay", "got it", "yeah"],
+        "hi": ["हां", "अच्छा", "ओके", "ठीक है"]
+        # Add more languages here
+    },
+    "DISENGAGED": {
+        "en": ["Are you there?", "Still with me?", "Can you hear me?"],
+        "hi": ["क्या आप अभी भी लाइन पर हैं?", "क्या मेरी बात सुन पा रहे हैं?", "आपकी आवाज़ नहीं आ रही है, क्या आप दोबारा कॉल कर सकते हैं?"],
+        # Add more languages here
+    }
 }
 
 SARVAM_SUBSCRIPTION_KEY=os.getenv("SARVAM_SUBSCRIPTION_KEY")
 SARVAM_VOICE=os.getenv("SARVAM_VOICE", "anushka")
 SARVAM_LANGUAGE=os.getenv("SARVAM_LANGUAGE", "hi-IN")
-SARVAM_MODEL=os.getenv("SARVAM_MODEL", "bulbul:v2")
+SARVAM_TTS_MODEL=os.getenv("SARVAM_TTS_MODEL", "bulbul:v2")
+SARVAM_STT_MODEL=os.getenv("SARVAM_STT_MODEL","saarika:v2.5")

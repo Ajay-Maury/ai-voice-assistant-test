@@ -2,10 +2,10 @@ import base64
 import os
 import subprocess
 import uuid
-from sarvamai import SarvamAI
+from sarvamai import AsyncSarvamAI, SarvamAI
 from sarvamai.play import save
 
-from config.settings import RESPONSE_AUDIO_CHUNK_DIR, SARVAM_SUBSCRIPTION_KEY, SARVAM_VOICE, SARVAM_LANGUAGE, SARVAM_MODEL
+from config.settings import RESPONSE_AUDIO_CHUNK_DIR, SARVAM_STT_MODEL, SARVAM_SUBSCRIPTION_KEY, SARVAM_VOICE, SARVAM_LANGUAGE, SARVAM_TTS_MODEL
 
 client = SarvamAI(api_subscription_key=SARVAM_SUBSCRIPTION_KEY)
 
@@ -14,7 +14,7 @@ async def synthesize_mulaw_sarvam_tts(text: str, voice: str = SARVAM_VOICE, lang
     try:
         audio_response = client.text_to_speech.convert(
             text=text,
-            model=SARVAM_MODEL,    # type: ignore
+            model=SARVAM_TTS_MODEL,    # type: ignore
             target_language_code=lang,
             speech_sample_rate=8000,
             speaker=voice,
@@ -65,11 +65,44 @@ def detect_text_language(text):
     )
     return response.language_code
 
-def transcribe_audio_sarvam(filepath):
+
+def transcribe_audio_sarvam(filepath, lang=SARVAM_LANGUAGE):
+    print(f"SARVAM_STT_MODEL---: {SARVAM_STT_MODEL}")
     response = client.speech_to_text.transcribe(
         file=open(filepath, "rb"),
-        model="saarika:v2.5",
-        language_code="hi-IN"
+        model=SARVAM_STT_MODEL,
+        language_code=lang
     )
-    # print(f"sarvam stt response--: {response.transcript}")
+    print(f"sarvam stt response--: {response.transcript}")
     return response.transcript
+
+
+async def transcribe_stream_sarvam(filepath: str, language_code: str = SARVAM_LANGUAGE):
+    """
+    Streams audio data to SarvamAI's real-time STT service using WebSocket.
+    Returns transcription result.
+    """
+    try:
+        # Load audio file
+        if not os.path.exists(filepath):
+            print(f"[Sarvam STT Stream]: File does not exist: {filepath}")
+            return ""
+
+        with open(filepath, "rb") as f:
+            audio_bytes = f.read()
+
+        client = AsyncSarvamAI(api_subscription_key=SARVAM_SUBSCRIPTION_KEY)
+
+        # Establish WebSocket connection for streaming STT
+        async with client.speech_to_text_streaming.connect(language_code=language_code) as ws:
+            await ws.transcribe(audio=audio_bytes)
+            print("[Sarvam STT Stream]: Audio data sent for transcription")
+
+            response = await ws.recv()
+            print(f"[Sarvam STT Stream]: Received response: {response}")
+
+            return getattr(response, "transcript", "")
+
+    except Exception as e:
+        print(f"[Sarvam STT Stream]: Error occurred: {e}")
+        return ""

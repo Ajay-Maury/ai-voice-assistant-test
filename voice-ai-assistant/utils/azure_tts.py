@@ -31,3 +31,29 @@ def synthesize_azure_tts_to_pcm(text):
         error_reason = getattr(result, "reason", "Unknown error")
         print(f"[ERROR] TTS failed: {error_reason}")
         return None
+    
+
+def transcribe_audio_azure(filepath, language="en-IN"):
+    try:
+        speech_config = speechsdk.SpeechConfig(
+            subscription=AZURE_STT_SUBSCRIPTION_KEY, region=AZURE_STT_REGION
+        )
+        speech_config.speech_recognition_language = language
+
+        audio_input = speechsdk.AudioConfig(filename=filepath)
+        recognizer = speechsdk.SpeechRecognizer(
+            speech_config=speech_config, audio_config=audio_input
+        )
+
+        print(f"[Azure STT]: Transcribing {filepath}...")
+        result = recognizer.recognize_once()
+
+        if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            print(f"[Azure STT]: Recognized: {result.text}")
+            return result.text
+        else:
+            print(f"[Azure STT]: No recognition, Reason: {result.reason}")
+            return ""
+    except Exception as e:
+        print(f"[Azure STT Error]: {e}")
+        return ""
