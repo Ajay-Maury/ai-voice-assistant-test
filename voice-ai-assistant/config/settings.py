@@ -12,6 +12,7 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "tts-1")
 OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "alloy")
 OPENAI_STT_MODEL = os.getenv("OPENAI_STT_MODEL", "whisper-1")
+WHISPER_STT_OFFLINE_MODEL = os.getenv("WHISPER_STT_OFFLINE_MODEL", "medium")    # "medium" for better accuracy
 
 REDIS_URL = os.getenv("REDIS_URL")
 WEB_SOCKET_URL = os.getenv("WEBSOCKET_URL")
@@ -34,7 +35,7 @@ AUDIO_RMS_THRESHOLD = 150.0  # RMS threshold for silence detection
 AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz) 
 AUDIO_SAMPLE_RATE = 8000  # Sample rate for audio
 
-AUDIO_BUFFER_SILENCE = 2  # Seconds of silence to wait before processing audio
+AUDIO_BUFFER_SILENCE = 1.5  # Seconds of silence to wait before processing audio
 MIN_AUDIO_BYTES = 1000  # ≈ 0.125 seconds of μ-law audio at 8kHz
 
 ENGAGEMENT_RESPONSES = {
@@ -45,10 +46,15 @@ ENGAGEMENT_RESPONSES = {
     },
     "DISENGAGED": {
         "en": ["Are you there?", "Still with me?", "Can you hear me?"],
-        "hi": ["क्या आप अभी भी लाइन पर हैं?", "क्या मेरी बात सुन पा रहे हैं?", "आपकी आवाज़ नहीं आ रही है, क्या आप दोबारा कॉल कर सकते हैं?"],
+        "hi": ["क्या आप अभी भी लाइन पर हैं?", "क्या मेरी बात सुन पा रहे हैं?", "आपकी आवाज़ नहीं आ रही है!",],
         # Add more languages here
     }
 }
+
+ENGAGEMENT_TRIGGER_SECONDS = 3.0                         # seconds of continuous speech
+ENGAGEMENT_BACKCHANNEL_REPEAT_DELAY = 3.0                # repeat interval for engagement task
+DISENGAGEMENT_TRIGGER_SECONDS = 10.0                     # seconds of silence
+DISENGAGEMENT_BACKCHANNEL_REPEAT_DELAY = 5.0             # repeat interval for disengagement task
 
 SARVAM_SUBSCRIPTION_KEY=os.getenv("SARVAM_SUBSCRIPTION_KEY")
 SARVAM_VOICE=os.getenv("SARVAM_VOICE", "anushka")

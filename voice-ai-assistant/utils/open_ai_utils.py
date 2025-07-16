@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 import uuid
 import whisper
 from openai import AsyncOpenAI, OpenAI
@@ -11,6 +12,7 @@ from config.settings import (
     OPENAI_TTS_MODEL,
     OPENAI_TTS_VOICE,
     RESPONSE_AUDIO_CHUNK_DIR,
+    WHISPER_STT_OFFLINE_MODEL,
 )
 
 from utils.audio_utils import convert_wav_to_mulaw
@@ -20,6 +22,9 @@ openai_client = OpenAI(
     api_key=OPENAI_API_KEY,
 )
 openai_model = OPENAI_MODEL
+
+# Load once and reuse (recommended for performance)
+whisper_model = whisper.load_model(WHISPER_STT_OFFLINE_MODEL)  # Options: tiny, base, small, medium, large
 
 
 def get_ai_response(user_input, context=[]):
@@ -31,6 +36,7 @@ def get_ai_response(user_input, context=[]):
                 "content": AI_SYSTEM_PROMPT,
             }
         ]
+        # print("Context:", context)
         for u, a in context:
             messages.append({"role": "user", "content": u})
             messages.append({"role": "assistant", "content": a})
@@ -41,6 +47,7 @@ def get_ai_response(user_input, context=[]):
             messages=messages, # type: ignore
         )
         content = response.choices[0].message.content
+
         return content.strip() if content is not None else ""
     except Exception as e:
         print("OpenAI error:", e)
@@ -59,6 +66,7 @@ def detect_audio_language_whisper(audio_file_path: str) -> str:
 def transcribe_audio_whisper(filepath, lang="en"):
     try:
         client = OpenAI(api_key=OPENAI_API_KEY)
+        start_time = time.time()
 
         with open(filepath, "rb") as audio_file:
             result = client.audio.transcriptions.create(
@@ -66,10 +74,32 @@ def transcribe_audio_whisper(filepath, lang="en"):
                 file=audio_file, 
                 language=lang
             )
+        end_time = time.time()
+
+        print(f"Cloud STT took {end_time - start_time:.2f} seconds")
         print(f"whisper stt response---: {result.text}")
+        
         return result.text.strip() if result.text else ""
     except Exception as e:
         print("OpenAI Whisper error:", e)
+        return ""
+    
+
+def transcribe_audio_whisper_local(filepath, lang="en"):
+    try:
+        start_time = time.time()
+
+        print(f"Transcribing {filepath} locally with Whisper in {lang} language...")
+        result = whisper_model.transcribe(filepath, language=lang, task="transcribe")
+        end_time = time.time()
+
+        print(f"Local STT took {end_time - start_time:.2f} seconds")
+        print(f"Local Whisper response: {result['text']}")
+
+        text = "".join(result["text"]) if isinstance(result["text"], list) else result["text"]
+        return text.strip() if text else ""
+    except Exception as e:
+        print("Local Whisper error:", e)
         return ""
 
 

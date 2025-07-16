@@ -23,6 +23,11 @@ app = Flask(__name__)
 client = Client(TWILIO_SID, TWILIO_TOKEN)
 
 
+@app.route("/", methods=["GET", "POST"])
+def health_check():
+    return jsonify({"message": "Welcome to AI voice assistant service"})
+
+
 @app.route("/voice", methods=["POST"])
 def voice():
     call_sid = request.form.get("CallSid")
