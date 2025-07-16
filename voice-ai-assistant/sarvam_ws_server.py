@@ -109,12 +109,12 @@ async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, r
                 print(f"[Engagement-{call_sid}]: Sending engaged response: '{text}'")
 
                 tts_stop_event_ref.clear()
-                tts_type_ref[0] = "engagement_reply"
+                tts_type_ref[0] = "engagement_response"
                 tts_task_ref[0] = asyncio.create_task(
                     stream_tts_to_client(websocket, stream_sid, text, call_sid, tts_stop_event_ref, mark_name="engagement_response")
                 )
                 last_engaged_time = now
-        elif not tts_type_ref[0] == "ai_reply":
+        elif not tts_type_ref[0] == "ai_response":
             if silent_since is None:
                 silent_since = now
                 speech_start_ref[0] = 0  # Reset speech start when silence begins
@@ -132,7 +132,7 @@ async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, r
                 print(f"[Engagement-{call_sid}]: Sending disengaged response: '{text}'")
 
                 tts_stop_event_ref.clear()
-                tts_type_ref[0] = "engagement_reply"
+                tts_type_ref[0] = "disengagement_response"
                 tts_task_ref[0] = asyncio.create_task(
                     stream_tts_to_client(websocket, stream_sid, text, call_sid, tts_stop_event_ref, mark_name="disengagement_response")
                 )
@@ -147,7 +147,7 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
         now = asyncio.get_event_loop().time()
         elapsed = now - last_audio_time_ref[0]
 
-        if len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES and tts_task_ref[0] and not tts_task_ref[0].done() and tts_type_ref[0] == "ai_reply":
+        if len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES and tts_task_ref[0] and not tts_task_ref[0].done() and not tts_type_ref[0] == "engagement_response":
             print(f"[Barge-in-{call_sid}]: User interrupted AI TTS")
             tts_stop_event_ref.set()
             await wait_for_tts_finish(tts_task_ref[0])
@@ -165,6 +165,11 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
                 whisper_result = transcribe_audio_whisper_groq(audio_file, "hi")
                 # whisper_result = transcribe_audio_whisper(audio_file, "hi")
                 # local_whisper_result = transcribe_audio_whisper_local(audio_file, "hi")
+                
+                # Remove temporary audio file after transcription to free up disk space
+                if whisper_result:
+                    os.remove(audio_file)
+                
                 user_text = whisper_result if isinstance(whisper_result, str) else whisper_result.get("text")
 
                 if not user_text:
@@ -176,17 +181,24 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
                     print(f"[Silence-{call_sid}]: Interrupting engagement reply TTS")
                     await websocket.send(json.dumps({"event": "clear", "streamSid": stream_sid}))
                     await websocket.send(json.dumps({"event": "mark", "streamSid": stream_sid, "mark": {"name": "engagement_reply_tts_interrupted"}}))
-
+                
                 context = get_context(call_sid)
-                ai_reply = get_ai_response(user_text, context)
-                store_context(call_sid, user_text, ai_reply)
+                ai_response = get_ai_response(user_text, context)
+                store_context(call_sid, user_text, ai_response)
+
+                tts_type_ref[0] = "ai_response"
+                # Wait for any existing TTS to finish before playing AI response
+                if tts_task_ref[0] and not tts_task_ref[0].done():
+                    print(f"[AI-TTS-{call_sid}]: Waiting for previous TTS to finish before starting AI response")
+                    await wait_for_tts_finish(tts_task_ref[0])
 
                 tts_stop_event_ref.clear()
-                tts_type_ref[0] = "ai_reply"
                 tts_task_ref[0] = asyncio.create_task(
-                    stream_tts_to_client(websocket, stream_sid, ai_reply, call_sid, tts_stop_event_ref, mark_name="ai_response")
+                    stream_tts_to_client(websocket, stream_sid, ai_response, call_sid, tts_stop_event_ref, mark_name="ai_response")
                 )
+
                 await websocket.send(json.dumps({"event": "clear", "streamSid": stream_sid}))
+
             except Exception as e:
                 print(f"[Silence-{call_sid}]: Error during processing: {e}")
 
