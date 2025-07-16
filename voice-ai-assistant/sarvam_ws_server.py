@@ -6,7 +6,7 @@ import base64
 from utils.redis_utils import get_context, store_context
 from utils.sarvam_utils import synthesize_mulaw_sarvam_tts, transcribe_audio_sarvam, transcribe_stream_sarvam
 from utils.audio_utils import is_silent_mulaw_audio, convert_mulaw_to_wav
-from utils.open_ai_utils import get_ai_response, transcribe_audio_whisper, transcribe_audio_whisper_local
+from utils.open_ai_utils import get_ai_response, transcribe_audio_whisper, transcribe_audio_whisper_groq, transcribe_audio_whisper_local
 
 from config.settings import (
     AUDIO_BUFFER_SILENCE,
@@ -17,6 +17,7 @@ from config.settings import (
     ENGAGEMENT_BACKCHANNEL_REPEAT_DELAY,
     ENGAGEMENT_TRIGGER_SECONDS,
     MIN_AUDIO_BYTES,
+    SILENCE_MAX_DURATION,
 )
 
 from utils.utils import get_engagement_response
@@ -47,16 +48,12 @@ async def stream_tts_to_client(websocket, stream_sid, text, call_sid, stop_event
                 "streamSid": stream_sid,
                 "media": {"payload": base64.b64encode(chunk).decode()},
             }))
-            if mark_name:
-                await websocket.send(json.dumps({
-                    "event": "mark", "streamSid": stream_sid, "mark": {"name": mark_name}
-                }))
 
         except websockets.exceptions.ConnectionClosed:
             print(f"[TTS-{call_sid}]: WebSocket connection closed during playback")
             return
 
-        await asyncio.sleep(0.02)  # ~20ms sleep to simulate real-time
+        await asyncio.sleep(0.01)  # ~10ms sleep to simulate real-time
 
     if not stop_event.is_set():
         await websocket.send(json.dumps({
@@ -82,7 +79,7 @@ async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, r
     silent_since = None
 
     while not stop_event.is_set():
-        await asyncio.sleep(0.25)
+        await asyncio.sleep(0.50)
         now = asyncio.get_event_loop().time()
 
         user_is_talking = len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES
@@ -90,7 +87,6 @@ async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, r
 
         if not tts_task_ref[0] or tts_task_ref[0].done():
             tts_type_ref[0] = None   # Reset the TTS type to None, indicating that no TTS is currently being played
-
         
         if user_is_talking:
             if silent_since is not None:
@@ -161,12 +157,13 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
         if len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES and elapsed >= AUDIO_BUFFER_SILENCE:
             print(f"[Silence-{call_sid}]: Silence detected after {elapsed:.2f}s, transcribing audio, now - speech_start_ref[0]-- {now - speech_start_ref[0]}")
             try:
-                audio_file = convert_mulaw_to_wav(call_sid, buffer_ref[0])
+                audio_file = convert_mulaw_to_wav(call_sid, raw_buffer_ref[0])
                 buffer_ref[0] = b""
                 raw_buffer_ref[0] = b""
                 speech_start_ref[0] = 0
 
-                whisper_result = transcribe_audio_whisper(audio_file, "hi")
+                whisper_result = transcribe_audio_whisper_groq(audio_file, "hi")
+                # whisper_result = transcribe_audio_whisper(audio_file, "hi")
                 # local_whisper_result = transcribe_audio_whisper_local(audio_file, "hi")
                 user_text = whisper_result if isinstance(whisper_result, str) else whisper_result.get("text")
 
@@ -229,19 +226,25 @@ async def websocket_handler(websocket):
             elif event == "media":
                 if not call_sid:
                     continue
+
                 audio_chunk = base64.b64decode(data["media"]["payload"])
                 buffer_ref[0] += audio_chunk
 
-                if not is_silent_mulaw_audio(audio_chunk):
-                    raw_buffer_ref[0] += audio_chunk
-                    last_audio_time_ref[0] = asyncio.get_event_loop().time()
-                    if speech_start_ref[0] == 0:
-                        speech_start_ref[0] = int(last_audio_time_ref[0])
+                now = asyncio.get_event_loop().time()
+                is_speech = not is_silent_mulaw_audio(audio_chunk)
 
-            elif event == "stop":
-                print(f"[Stop]: Stream ended for callSid={call_sid}")
-                stop_event.set()
-                break
+                if is_speech:
+                    raw_buffer_ref[0] += audio_chunk
+                    last_audio_time_ref[0] = now
+
+                    if speech_start_ref[0] == 0:
+                        speech_start_ref[0] = int(now)
+                elif (now - last_audio_time_ref[0]) < SILENCE_MAX_DURATION:
+                    # Allow brief silence  
+                    raw_buffer_ref[0] += audio_chunk
+                else:
+                    # Skip extended silence
+                    pass
 
     except Exception as e:
         print(f"[WebSocket-{call_sid}]: Error occurred: {e}")

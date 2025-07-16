@@ -2,10 +2,14 @@ import asyncio
 import os
 import time
 import uuid
+from groq import Groq
 import whisper
 from openai import AsyncOpenAI, OpenAI
 from config.settings import (
     AI_SYSTEM_PROMPT,
+    GROQ_API_KEY,
+    GROQ_CHAT_TEMPERATURE,
+    GROQ_STT_MODEL,
     OPENAI_API_KEY,
     OPENAI_MODEL,
     OPENAI_STT_MODEL,
@@ -22,6 +26,8 @@ openai_client = OpenAI(
     api_key=OPENAI_API_KEY,
 )
 openai_model = OPENAI_MODEL
+groq_client = Groq(api_key=GROQ_API_KEY)
+
 
 # Load once and reuse (recommended for performance)
 whisper_model = whisper.load_model(WHISPER_STT_OFFLINE_MODEL)  # Options: tiny, base, small, medium, large
@@ -61,6 +67,28 @@ def detect_audio_language_whisper(audio_file_path: str) -> str:
     mel = whisper.log_mel_spectrogram(audio).to(model.device)
     _, probs = model.detect_language(mel)
     return max(probs, key=probs.get)      # type: ignore
+
+
+def transcribe_audio_whisper_groq(filepath, lang="en"):
+    try:
+        start_time = time.time()
+        print(f"Transcribing {filepath} with groq in {lang} language...")
+
+        with open(filepath, "rb") as audio_file:
+            transcription = groq_client.audio.transcriptions.create(
+                file=(filepath, audio_file.read()),
+                model=GROQ_STT_MODEL,
+                language=lang,
+                temperature=GROQ_CHAT_TEMPERATURE
+            )
+        endtime = time.time()
+
+        print(f"Groq Whisper v3-turbo response time : {endtime - start_time:.2f}")
+        print(f"Groq Whisper v3-turbo response: {transcription.text}")
+        return transcription.text.strip() if hasattr(transcription, 'text') else ""
+    except Exception as e:
+        print("Groq Whisper v3-turbo error:", e)
+        return ""
 
 
 def transcribe_audio_whisper(filepath, lang="en"):

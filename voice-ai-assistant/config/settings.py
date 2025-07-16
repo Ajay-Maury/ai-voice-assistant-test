@@ -13,6 +13,9 @@ OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "tts-1")
 OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "alloy")
 OPENAI_STT_MODEL = os.getenv("OPENAI_STT_MODEL", "whisper-1")
 WHISPER_STT_OFFLINE_MODEL = os.getenv("WHISPER_STT_OFFLINE_MODEL", "medium")    # "medium" for better accuracy
+GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_CHAT_TEMPERATURE = float(os.getenv("GROQ_CHAT_TEMPERATURE", 0.1))
 
 REDIS_URL = os.getenv("REDIS_URL")
 WEB_SOCKET_URL = os.getenv("WEBSOCKET_URL")
@@ -34,7 +37,7 @@ AUDIO_SILENCE_THRESHOLDS = {
 AUDIO_RMS_THRESHOLD = 150.0  # RMS threshold for silence detection
 AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz) 
 AUDIO_SAMPLE_RATE = 8000  # Sample rate for audio
-
+SILENCE_MAX_DURATION=0.8  # Max seconds of silence to be added in audio buffer  s
 AUDIO_BUFFER_SILENCE = 1.5  # Seconds of silence to wait before processing audio
 MIN_AUDIO_BYTES = 1000  # ≈ 0.125 seconds of μ-law audio at 8kHz
 
