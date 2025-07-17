@@ -159,6 +159,38 @@ class LangChainAIAgent:
             print(f"Error in LangChain agent processing: {e}")
             return f"I'm sorry, I encountered an error: {str(e)}"
     
+    async def process_query_streaming(self, query: str, call_sid: str, redis_context: List[Dict[str, str]] = None):
+        """Process a query using LangChain agent executor with streaming responses"""
+        try:
+            # Load Redis context if provided
+            if redis_context:
+                self.load_redis_context(call_sid, redis_context)
+            
+            # Get the agent executor for this call
+            agent_executor = self.get_agent_executor(call_sid)
+            
+            # Stream the response from agent executor
+            async for chunk in agent_executor.astream({"input": query}):
+                if "output" in chunk:
+                    yield chunk["output"]
+                elif "actions" in chunk:
+                    # Handle intermediate actions if needed
+                    for action in chunk["actions"]:
+                        if hasattr(action, 'log') and action.log:
+                            # You can yield thinking steps if desired
+                            pass
+                elif "steps" in chunk:
+                    # Handle tool usage steps
+                    for step in chunk["steps"]:
+                        if hasattr(step, 'observation') and step.observation:
+                            # You can yield tool results if desired
+                            pass
+                            
+        except Exception as e:
+            print(f"Error in LangChain agent streaming: {e}")
+            error_msg = f"I'm sorry, I encountered an error: {str(e)}"
+            yield error_msg
+    
     def clear_memory(self, call_sid: str):
         """Clear conversation memory for a specific call"""
         if call_sid in self.memories:

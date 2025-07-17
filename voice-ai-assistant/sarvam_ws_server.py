@@ -4,9 +4,10 @@ import websockets
 import json
 import base64
 from utils.redis_utils import get_context, store_context
-from utils.sarvam_utils import synthesize_mulaw_sarvam_tts
+from utils.sarvam_utils import synthesize_mulaw_sarvam_tts, synthesize_streaming_sarvam_tts
 from utils.audio_utils import is_silent_mulaw_audio, convert_mulaw_to_wav
 from utils.open_ai_utils import get_ai_response, transcribe_audio_whisper_groq
+from utils.langchain_agent import LangChainAIAgent
 
 from config.settings import (
     AUDIO_BUFFER_SILENCE,
@@ -62,6 +63,154 @@ async def stream_tts_to_client(websocket, stream_sid, text, call_sid, stop_event
             "streamSid": stream_sid,
             "mark": {"name": f"{mark_name}_tts_complete" if mark_name else "tts_complete"},
         }))
+
+
+async def stream_real_time_tts_to_client(websocket, stream_sid, text, call_sid, stop_event, mark_name=None):
+    """Stream TTS audio using Sarvam AI's streaming API for real-time playback"""
+    print(f"[Streaming-TTS-{call_sid}]: Starting real-time TTS for: {text}")
+    
+    audio_generated = False
+    
+    try:
+        # Use streaming TTS generator
+        async for audio_chunk in synthesize_streaming_sarvam_tts(text):
+            if stop_event.is_set():
+                print(f"[Streaming-TTS-{call_sid}]: Playback interrupted by user")
+                break
+                
+            if not audio_chunk:
+                continue
+                
+            audio_generated = True
+            print(f"[Streaming-TTS-{call_sid}]: Received audio chunk of {len(audio_chunk)} bytes")
+                
+            # Send audio chunk immediately as it arrives
+            for i in range(0, len(audio_chunk), AUDIO_CHUNK_SIZE):
+                if stop_event.is_set():
+                    print(f"[Streaming-TTS-{call_sid}]: Playback interrupted during chunk")
+                    break
+                    
+                chunk = audio_chunk[i: i + AUDIO_CHUNK_SIZE]
+                try:
+                    await websocket.send(json.dumps({
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": {"payload": base64.b64encode(chunk).decode()},
+                    }))
+                except websockets.exceptions.ConnectionClosed:
+                    print(f"[Streaming-TTS-{call_sid}]: WebSocket connection closed during playback")
+                    return
+                    
+                await asyncio.sleep(0.01)  # ~10ms sleep to simulate real-time
+                
+    except Exception as e:
+        print(f"[Streaming-TTS-{call_sid}]: Error in streaming TTS: {e}")
+        
+    # Fallback to regular TTS if no audio was generated
+    if not audio_generated:
+        print(f"[Streaming-TTS-{call_sid}]: No audio generated, falling back to regular TTS")
+        try:
+            # Get μ-law encoded audio bytes using regular TTS
+            audio_chunk = await synthesize_mulaw_sarvam_tts(text)
+            if audio_chunk:
+                for i in range(0, len(audio_chunk), AUDIO_CHUNK_SIZE):
+                    if stop_event.is_set():
+                        print(f"[Fallback-TTS-{call_sid}]: Playback interrupted by user")
+                        break
+
+                    chunk = audio_chunk[i: i + AUDIO_CHUNK_SIZE]
+                    try:
+                        await websocket.send(json.dumps({
+                            "event": "media",
+                            "streamSid": stream_sid,
+                            "media": {"payload": base64.b64encode(chunk).decode()},
+                        }))
+                    except websockets.exceptions.ConnectionClosed:
+                        print(f"[Fallback-TTS-{call_sid}]: WebSocket connection closed during playback")
+                        return
+
+                    await asyncio.sleep(0.01)  # ~10ms sleep to simulate real-time
+                audio_generated = True
+        except Exception as fallback_e:
+            print(f"[Fallback-TTS-{call_sid}]: Fallback TTS also failed: {fallback_e}")
+        
+    if not stop_event.is_set() and audio_generated:
+        await websocket.send(json.dumps({
+            "event": "mark",
+            "streamSid": stream_sid,
+            "mark": {"name": f"{mark_name}_tts_complete" if mark_name else "streaming_tts_complete"},
+        }))
+        print(f"[Streaming-TTS-{call_sid}]: Streaming TTS completed")
+
+
+async def handle_streaming_ai_response(websocket, stream_sid, call_sid, user_text, context, stop_event, tts_task_ref, tts_type_ref, tts_stop_event_ref):
+    """Handle AI response with streaming agent and streaming TTS"""
+    print(f"[Streaming-AI-{call_sid}]: Processing streaming AI response for: {user_text}")
+    
+    try:
+        # Initialize the LangChain agent
+        agent = LangChainAIAgent()
+        
+        # Collect streaming response chunks
+        response_chunks = []
+        sentence_buffer = ""
+        
+        # Stream AI response
+        async for chunk in agent.process_query_streaming(user_text, call_sid, context):
+            response_chunks.append(chunk)
+            sentence_buffer += chunk
+            
+            # Check if we have a complete sentence or substantial chunk
+            if (sentence_buffer.strip().endswith(('.', '!', '?')) or 
+                len(sentence_buffer.strip()) > 50):
+                
+                # Send this chunk to streaming TTS
+                if sentence_buffer.strip():
+                    print(f"[Streaming-AI-{call_sid}]: Sending chunk to TTS: {sentence_buffer.strip()}")
+                    
+                    # Wait for any existing TTS to finish
+                    if tts_task_ref[0] and not tts_task_ref[0].done():
+                        await wait_for_tts_finish(tts_task_ref[0])
+                    
+                    tts_stop_event_ref.clear()
+                    tts_type_ref[0] = "streaming_ai_response"
+                    tts_task_ref[0] = asyncio.create_task(
+                        stream_real_time_tts_to_client(websocket, stream_sid, sentence_buffer.strip(), 
+                                                     call_sid, tts_stop_event_ref, mark_name="streaming_ai_chunk")
+                    )
+                    
+                    sentence_buffer = ""
+                    
+                    # Small delay to allow audio to start playing
+                    await asyncio.sleep(0.1)
+        
+        # Handle any remaining content
+        if sentence_buffer.strip():
+            print(f"[Streaming-AI-{call_sid}]: Sending final chunk to TTS: {sentence_buffer.strip()}")
+            
+            # Wait for any existing TTS to finish
+            if tts_task_ref[0] and not tts_task_ref[0].done():
+                await wait_for_tts_finish(tts_task_ref[0])
+            
+            tts_stop_event_ref.clear()
+            tts_type_ref[0] = "streaming_ai_response"
+            tts_task_ref[0] = asyncio.create_task(
+                stream_real_time_tts_to_client(websocket, stream_sid, sentence_buffer.strip(), 
+                                             call_sid, tts_stop_event_ref, mark_name="streaming_ai_final")
+            )
+        
+        # Store the complete response in context
+        full_response = "".join(response_chunks)
+        store_context(call_sid, user_text, full_response)
+        
+        return full_response
+        
+    except Exception as e:
+        print(f"[Streaming-AI-{call_sid}]: Error in streaming AI response: {e}")
+        # Fallback to regular AI response
+        ai_response = await get_ai_response(user_text, context, call_sid)
+        store_context(call_sid, user_text, ai_response)
+        return ai_response
 
 
 # Ensure TTS task finishes gracefully
@@ -135,7 +284,7 @@ async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, r
                 tts_stop_event_ref.clear()
                 tts_type_ref[0] = "disengagement_response"
                 tts_task_ref[0] = asyncio.create_task(
-                    stream_tts_to_client(websocket, stream_sid, text, call_sid, tts_stop_event_ref, mark_name="disengagement_response")
+                    stream_real_time_tts_to_client(websocket, stream_sid, text, call_sid, tts_stop_event_ref, mark_name="disengagement_response")
                 )
                 last_disengaged_time = now
 
@@ -182,18 +331,11 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
                     await websocket.send(json.dumps({"event": "mark", "streamSid": stream_sid, "mark": {"name": "engagement_reply_tts_interrupted"}}))
                 
                 context = get_context(call_sid)
-                ai_response = await get_ai_response(user_text, context, call_sid)
-                store_context(call_sid, user_text, ai_response)
-
-                tts_type_ref[0] = "ai_response"
-                # Wait for any existing TTS to finish before playing AI response
-                if tts_task_ref[0] and not tts_task_ref[0].done():
-                    print(f"[AI-TTS-{call_sid}]: Waiting for previous TTS to finish before starting AI response")
-                    await wait_for_tts_finish(tts_task_ref[0])
-
-                tts_stop_event_ref.clear()
-                tts_task_ref[0] = asyncio.create_task(
-                    stream_tts_to_client(websocket, stream_sid, ai_response, call_sid, tts_stop_event_ref, mark_name="ai_response")
+                
+                # Use streaming AI response with streaming TTS
+                ai_response = await handle_streaming_ai_response(
+                    websocket, stream_sid, call_sid, user_text, context, 
+                    stop_event, tts_task_ref, tts_type_ref, tts_stop_event_ref
                 )
 
                 await websocket.send(json.dumps({"event": "clear", "streamSid": stream_sid}))
@@ -241,7 +383,7 @@ async def websocket_handler(websocket):
                 tts_stop_event.clear()
                 tts_type_ref[0] = "greeting"
                 tts_task_ref[0] = asyncio.create_task(
-                    stream_tts_to_client(websocket, stream_sid, greeting_message, call_sid, tts_stop_event, mark_name="greeting")
+                    stream_real_time_tts_to_client(websocket, stream_sid, greeting_message, call_sid, tts_stop_event, mark_name="greeting")
                 )
 
             elif event == "media":
@@ -292,12 +434,12 @@ async def websocket_handler(websocket):
             except asyncio.CancelledError:
                 print(f"[Cleanup-{call_sid}]: Engagement task cancelled")
 
-        for filename in os.listdir(AUDIO_CHUNK_DIR):
-            if f"{call_sid}_" in filename:
-                try:
-                    os.remove(os.path.join(AUDIO_CHUNK_DIR, filename))
-                except Exception as e:
-                    print(f"[Cleanup-{call_sid}]: File removal error: {e}")
+        # for filename in os.listdir(AUDIO_CHUNK_DIR):
+        #     if f"{call_sid}_" in filename:
+        #         try:
+        #             os.remove(os.path.join(AUDIO_CHUNK_DIR, filename))
+        #         except Exception as e:
+        #             print(f"[Cleanup-{call_sid}]: File removal error: {e}")
 
         try:
             await websocket.send(json.dumps({"event": "clear", "streamSid": stream_sid}))

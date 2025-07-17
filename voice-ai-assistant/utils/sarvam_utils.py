@@ -2,6 +2,7 @@ import base64
 import os
 import subprocess
 import uuid
+import asyncio
 from sarvamai import AsyncSarvamAI, SarvamAI
 from sarvamai.play import save
 
@@ -108,3 +109,90 @@ async def transcribe_stream_sarvam(filepath: str, language_code: str = SARVAM_LA
     except Exception as e:
         print(f"[Sarvam STT Stream]: Error occurred: {e}")
         return ""
+
+
+async def synthesize_streaming_sarvam_tts(text: str, voice: str = SARVAM_VOICE, lang: str = SARVAM_LANGUAGE):
+    """
+    Stream audio chunks from Sarvam AI's streaming TTS API.
+    Yields μ-law encoded audio chunks as they become available.
+    """
+    try:
+        async_client = AsyncSarvamAI(api_subscription_key=SARVAM_SUBSCRIPTION_KEY)
+        
+        # Establish WebSocket connection for streaming TTS
+        async with async_client.text_to_speech_streaming.connect(model=SARVAM_TTS_MODEL) as ws:
+            # Configure the streaming TTS settings
+            await ws.configure(
+                target_language_code=lang,
+                speaker=voice,
+                pitch=0.2,
+                pace=0.9,
+                min_buffer_size=10,  # Start processing with fewer characters
+                max_chunk_length=100,  # Keep chunks small for real-time feel
+                output_audio_codec="wav",
+                output_audio_bitrate="8000"
+            )
+            
+            # Send text for conversion
+            await ws.convert(text)
+            await ws.flush()
+            
+            # Process streaming audio chunks
+            async for message in ws:
+                print(f"[Streaming TTS]: Received message type: {type(message)}")
+                if hasattr(message, 'audio') and message.audio:
+                    print(f"[Streaming TTS]: Processing audio chunk of size: {len(message.audio)}")
+                    # Decode base64 audio data
+                    wav_bytes = base64.b64decode(message.audio)
+                    
+                    # Save WAV temporarily
+                    temp_wav_path = os.path.join(RESPONSE_AUDIO_CHUNK_DIR, f"stream_tts_{uuid.uuid4().hex[:8]}.wav")
+                    with open(temp_wav_path, "wb") as f:
+                        f.write(wav_bytes)
+                    
+                    # Convert to μ-law
+                    mulaw_path = temp_wav_path.replace(".wav", ".raw")
+                    
+                    try:
+                        subprocess.run([
+                            "ffmpeg", "-i", temp_wav_path,
+                            "-ar", "8000", "-ac", "1",
+                            "-acodec", "pcm_mulaw", "-f", "mulaw", "-y", mulaw_path
+                        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        
+                        # Read μ-law audio data
+                        with open(mulaw_path, "rb") as f:
+                            mulaw_audio = f.read()
+                        
+                        print(f"[Streaming TTS]: Converted to μ-law, size: {len(mulaw_audio)} bytes")
+                        
+                        # Cleanup temporary files
+                        os.remove(temp_wav_path)
+                        os.remove(mulaw_path)
+                        
+                        # Yield the μ-law audio chunk
+                        if mulaw_audio:
+                            yield mulaw_audio
+                        
+                    except subprocess.CalledProcessError as ffmpeg_err:
+                        print(f"[Streaming TTS]: FFmpeg conversion failed: {ffmpeg_err}")
+                        # Cleanup on error
+                        if os.path.exists(temp_wav_path):
+                            os.remove(temp_wav_path)
+                        if os.path.exists(mulaw_path):
+                            os.remove(mulaw_path)
+                        continue
+                        
+                elif hasattr(message, 'error'):
+                    print(f"[Streaming TTS]: Error from Sarvam: {message.error}")
+                    break
+                else:
+                    print(f"[Streaming TTS]: Received message without audio: {message}")
+                    # Check if streaming is complete
+                    if hasattr(message, 'is_final') and message.is_final:
+                        print(f"[Streaming TTS]: Streaming complete")
+                        break
+                    
+    except Exception as e:
+        print(f"[Streaming TTS]: Error in streaming TTS: {e}")
+        return
