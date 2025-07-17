@@ -18,3 +18,5 @@ celerybeat-schedule
 .env
 
 .idea
+
+voice-ai-assistant/response_audio_chunks/*

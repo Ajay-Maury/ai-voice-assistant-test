@@ -106,14 +106,14 @@ async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, r
                 (last_engaged_time > 0 and (now - last_engaged_time) >= ENGAGEMENT_BACKCHANNEL_REPEAT_DELAY)
             ) and not tts_active:
 
-                text = get_engagement_response("ENGAGED", "hi")
-                print(f"[Engagement-{call_sid}]: Sending engaged response: '{text}'")
+                # text = get_engagement_response("ENGAGED", "hi")
+                # print(f"[Engagement-{call_sid}]: Sending engaged response: '{text}'")
 
-                tts_stop_event_ref.clear()
-                tts_type_ref[0] = "engagement_response"
-                tts_task_ref[0] = asyncio.create_task(
-                    stream_tts_to_client(websocket, stream_sid, text, call_sid, tts_stop_event_ref, mark_name="engagement_response")
-                )
+                # tts_stop_event_ref.clear()
+                # tts_type_ref[0] = "engagement_response"
+                # tts_task_ref[0] = asyncio.create_task(
+                #     stream_tts_to_client(websocket, stream_sid, text, call_sid, tts_stop_event_ref, mark_name="engagement_response")
+                # )
                 last_engaged_time = now
         elif not tts_type_ref[0] == "ai_response":
             if silent_since is None:
@@ -164,9 +164,7 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
                 speech_start_ref[0] = 0
 
                 whisper_result = transcribe_audio_whisper_groq(audio_file, "hi")
-                # whisper_result = transcribe_audio_whisper(audio_file, "hi")
-                # local_whisper_result = transcribe_audio_whisper_local(audio_file, "hi")
-                
+
                 # Remove temporary audio file after transcription to free up disk space
                 if whisper_result:
                     os.remove(audio_file)
@@ -235,6 +233,16 @@ async def websocket_handler(websocket):
                 engagement_task = asyncio.create_task(
                     monitor_user_engagement(websocket, stream_sid, call_sid, stop_event,
                                             raw_buffer_ref, tts_task_ref, tts_type_ref, tts_stop_event, speech_start_ref))
+
+                # Send greeting message immediately after connection
+                greeting_message = "Hi Aman, this is Manisha from Omen Tech Innovations! Do you run a business or work with one that handles customer calls?"
+                print(f"[Greeting-{call_sid}]: Sending greeting message")
+                
+                tts_stop_event.clear()
+                tts_type_ref[0] = "greeting"
+                tts_task_ref[0] = asyncio.create_task(
+                    stream_tts_to_client(websocket, stream_sid, greeting_message, call_sid, tts_stop_event, mark_name="greeting")
+                )
 
             elif event == "media":
                 if not call_sid:

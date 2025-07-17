@@ -57,8 +57,7 @@ def transcribe_audio_whisper_groq(filepath, lang="hi"):
                 file=(filepath, audio_file.read()),
                 model=GROQ_STT_MODEL,
                 prompt="We are trying to talk to people who speaks hindi-english mix language.",
-                temperature=GROQ_CHAT_TEMPERATURE
-            )
+                temperature=GROQ_CHAT_TEMPERATURE            )
         endtime = time.time()
 
         print(f"Groq Whisper v3-turbo response time : {endtime - start_time:.2f}")

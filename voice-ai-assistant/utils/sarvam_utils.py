@@ -18,6 +18,8 @@ async def synthesize_mulaw_sarvam_tts(text: str, voice: str = SARVAM_VOICE, lang
             target_language_code=lang,
             speech_sample_rate=8000,
             speaker=voice,
+            pace=0.9,
+            pitch=0.2,
         )
 
         if not audio_response or not hasattr(audio_response, "audios") or not audio_response.audios:

@@ -5,12 +5,9 @@ from config.settings import (
     TWILIO_SID,
     TWILIO_TOKEN,
     TWILIO_NUMBER,
-    # VOICE_ROUTE_URL,
-    # WEB_SOCKET_URL,
+    VOICE_ROUTE_URL,
+    WEB_SOCKET_URL,
 )
-
-WEB_SOCKET_URL="wss://poor-worlds-shine.loca.lt"
-VOICE_ROUTE_URL="https://b20d83be37f2.ngrok-free.app/voice"
 
 
 print("Starting Flask app...")

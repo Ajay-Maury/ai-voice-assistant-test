@@ -62,7 +62,7 @@ AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz)
 AUDIO_SAMPLE_RATE = 8000  # Sample rate for audio
 SILENCE_MAX_DURATION=0.8  # Max seconds of silence to be added in audio buffer  s
 AUDIO_BUFFER_SILENCE = 1.5  # Seconds of silence to wait before processing audio
-MIN_AUDIO_BYTES = 1000  # ≈ 0.125 seconds of μ-law audio at 8kHz
+MIN_AUDIO_BYTES = 10000  # ≈ 0.125 seconds of μ-law audio at 8kHz
 
 ENGAGEMENT_RESPONSES = {
     "ENGAGED": {
@@ -79,7 +79,7 @@ ENGAGEMENT_RESPONSES = {
 
 ENGAGEMENT_TRIGGER_SECONDS = 3.0                         # seconds of continuous speech
 ENGAGEMENT_BACKCHANNEL_REPEAT_DELAY = 3.0                # repeat interval for engagement task
-DISENGAGEMENT_TRIGGER_SECONDS = 10.0                     # seconds of silence
+DISENGAGEMENT_TRIGGER_SECONDS = 20.0                     # seconds of silence
 DISENGAGEMENT_BACKCHANNEL_REPEAT_DELAY = 5.0             # repeat interval for disengagement task
 
 TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
