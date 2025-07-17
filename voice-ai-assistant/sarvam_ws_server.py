@@ -4,9 +4,9 @@ import websockets
 import json
 import base64
 from utils.redis_utils import get_context, store_context
-from utils.sarvam_utils import synthesize_mulaw_sarvam_tts, transcribe_audio_sarvam, transcribe_stream_sarvam
+from utils.sarvam_utils import synthesize_mulaw_sarvam_tts
 from utils.audio_utils import is_silent_mulaw_audio, convert_mulaw_to_wav
-from utils.open_ai_utils import get_ai_response, transcribe_audio_whisper, transcribe_audio_whisper_groq, transcribe_audio_whisper_local
+from utils.open_ai_utils import get_ai_response, transcribe_audio_whisper_groq
 
 from config.settings import (
     AUDIO_BUFFER_SILENCE,
@@ -18,6 +18,7 @@ from config.settings import (
     ENGAGEMENT_TRIGGER_SECONDS,
     MIN_AUDIO_BYTES,
     SILENCE_MAX_DURATION,
+    TAVILY_API_KEY
 )
 
 from utils.utils import get_engagement_response
@@ -162,7 +163,7 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
                 raw_buffer_ref[0] = b""
                 speech_start_ref[0] = 0
 
-                whisper_result = transcribe_audio_whisper_groq(audio_file, "hi")
+                whisper_result = transcribe_audio_whisper_groq(audio_file, "en")
                 # whisper_result = transcribe_audio_whisper(audio_file, "hi")
                 # local_whisper_result = transcribe_audio_whisper_local(audio_file, "hi")
                 
@@ -183,7 +184,7 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
                     await websocket.send(json.dumps({"event": "mark", "streamSid": stream_sid, "mark": {"name": "engagement_reply_tts_interrupted"}}))
                 
                 context = get_context(call_sid)
-                ai_response = get_ai_response(user_text, context)
+                ai_response = await get_ai_response(user_text, context, call_sid)
                 store_context(call_sid, user_text, ai_response)
 
                 tts_type_ref[0] = "ai_response"

@@ -9,8 +9,8 @@ from config.settings import (
     # WEB_SOCKET_URL,
 )
 
-WEB_SOCKET_URL="wss://myvoicews.loca.lt"
-VOICE_ROUTE_URL="https://cae4-115-96-179-103.ngrok-free.app/voice"
+WEB_SOCKET_URL="wss://poor-worlds-shine.loca.lt"
+VOICE_ROUTE_URL="https://b20d83be37f2.ngrok-free.app/voice"
 
 
 print("Starting Flask app...")
