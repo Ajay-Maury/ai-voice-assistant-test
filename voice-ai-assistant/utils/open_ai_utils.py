@@ -10,6 +10,7 @@ from config.settings import (
     GROQ_CHAT_TEMPERATURE,
     GROQ_STT_MODEL,
     OPENAI_API_KEY,
+    OPENAI_MODEL,
     WHISPER_STT_OFFLINE_MODEL,  
 )
 
@@ -46,17 +47,16 @@ async def get_ai_response(user_input, context=None, call_sid="default"):
 
 
 
-def transcribe_audio_whisper_groq(filepath, lang="en"):
+def transcribe_audio_whisper_groq(filepath, lang="hi"):
     try:
         start_time = time.time()
         print(f"Transcribing {filepath} with groq in {lang} language...")
 
         with open(filepath, "rb") as audio_file:
-            transcription = groq_client.audio.transcriptions.create(
+            transcription = groq_client.audio.translations.create(
                 file=(filepath, audio_file.read()),
                 model=GROQ_STT_MODEL,
-                prompt="We are trying to talk to people who speaks hinglish hindi-english mix.",
-                language="en",
+                prompt="We are trying to talk to people who speaks hindi-english mix language.",
                 temperature=GROQ_CHAT_TEMPERATURE
             )
         endtime = time.time()

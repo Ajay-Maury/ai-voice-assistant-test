@@ -163,7 +163,7 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
                 raw_buffer_ref[0] = b""
                 speech_start_ref[0] = 0
 
-                whisper_result = transcribe_audio_whisper_groq(audio_file, "en")
+                whisper_result = transcribe_audio_whisper_groq(audio_file, "hi")
                 # whisper_result = transcribe_audio_whisper(audio_file, "hi")
                 # local_whisper_result = transcribe_audio_whisper_local(audio_file, "hi")
                 

@@ -16,16 +16,16 @@ class LangChainAIAgent:
     
     def __init__(self):
 
-        self.llm = ChatGroq(
-            model="llama-3.3-70b-versatile",  # You can use other supported Groq models
-            temperature=0.7,
-            api_key=GROQ_API_KEY
-        )
-        # self.llm = ChatOpenAI(
-        #     model="gpt-4o",
+        # self.llm = ChatGroq(
+        #     model="llama-3.3-70b-versatile",  # You can use other supported Groq models
         #     temperature=0.7,
-        #     openai_api_key=os.getenv("OPENAI_API_KEY")
+        #     api_key=GROQ_API_KEY
         # )
+        self.llm = ChatOpenAI(
+            model="gpt-4o",
+            temperature=0.7,
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
         
         # Initialize Tavily search tool
         self.tavily_search = TavilySearchResults(
@@ -41,7 +41,7 @@ class LangChainAIAgent:
         self.prompt = ChatPromptTemplate.from_messages([
             (
                 "system",
-                """You are **Manisha**, female voice, a warm, conversational voice agent from **Aman Tech Innovations**.
+                """You are **Manisha**, female voice, a warm, conversational voice agent from **Aman Tech Innovations** who always reply in hinglish in female context.
 
                 Your objectives on every call are:
                 1. Confirm the caller’s business context.             (‣ Do they run/work for a business?)
@@ -129,11 +129,13 @@ class LangChainAIAgent:
         memory.chat_memory.clear()
         
         # Load Redis context into LangChain memory
+        print("\n\nbefore appending memory.chat_memory", memory.chat_memory)
         for message in redis_context:
             if message["role"] == "user":
                 memory.chat_memory.add_user_message(message["content"])
             elif message["role"] == "assistant":
                 memory.chat_memory.add_ai_message(message["content"])
+        print("\n\nafter appending memory.chat_memory", memory.chat_memory)
 
     async def process_query(self, query: str, call_sid: str, redis_context: List[Dict[str, str]] = None) -> str:
         """Process a query using LangChain agent with conversation memory"""

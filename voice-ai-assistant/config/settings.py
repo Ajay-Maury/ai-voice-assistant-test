@@ -97,7 +97,7 @@ WHISPER_STT_OFFLINE_MODEL = os.getenv("WHISPER_STT_OFFLINE_MODEL", "medium")    
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 print("GROQ_API_KEY", GROQ_API_KEY)
-GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+GROQ_STT_MODEL = os.getenv("GROQ_STT_MODEL", "whisper-large-v3")
 GROQ_CHAT_TEMPERATURE = float(os.getenv("GROQ_CHAT_TEMPERATURE", 0.4))
 
 REDIS_URL = os.getenv("REDIS_URL")
@@ -110,6 +110,4 @@ SARVAM_LANGUAGE=os.getenv("SARVAM_LANGUAGE", "hi-IN")
 SARVAM_TTS_MODEL=os.getenv("SARVAM_TTS_MODEL", "bulbul:v2")
 SARVAM_STT_MODEL=os.getenv("SARVAM_STT_MODEL","saarika:v2.5")
 
-TAVILY_API_KEY=os.getenv("TAVILY_API_KEY","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")
-
-print("TAVILY_API_KEY", TAVILY_API_KEY)
+TAVILY_API_KEY=os.getenv("TAVILY_API_KEY","tvly-Cn5d0xe")
