@@ -5,7 +5,7 @@ import uuid
 from sarvamai import AsyncSarvamAI, SarvamAI
 from sarvamai.play import save
 
-from config.settings import RESPONSE_AUDIO_CHUNK_DIR, SARVAM_STT_MODEL, SARVAM_SUBSCRIPTION_KEY, SARVAM_VOICE, SARVAM_LANGUAGE, SARVAM_TTS_MODEL
+from config.settings import RESPONSE_AUDIO_CHUNK_DIR, SARVAM_PACE, SARVAM_STT_MODEL, SARVAM_SUBSCRIPTION_KEY, SARVAM_VOICE, SARVAM_LANGUAGE, SARVAM_TTS_MODEL
 
 client = SarvamAI(api_subscription_key=SARVAM_SUBSCRIPTION_KEY)
 
@@ -18,6 +18,8 @@ async def synthesize_mulaw_sarvam_tts(text: str, voice: str = SARVAM_VOICE, lang
             target_language_code=lang,
             speech_sample_rate=8000,
             speaker=voice,
+            enable_preprocessing=True,
+            pace=SARVAM_PACE
         )
 
         if not audio_response or not hasattr(audio_response, "audios") or not audio_response.audios:
@@ -95,7 +97,7 @@ async def transcribe_stream_sarvam(filepath: str, language_code: str = SARVAM_LA
 
         # Establish WebSocket connection for streaming STT
         async with client.speech_to_text_streaming.connect(language_code=language_code) as ws:
-            await ws.transcribe(audio=audio_bytes)
+            await ws.transcribe(audio=audio_bytes)      # type: ignore
             print("[Sarvam STT Stream]: Audio data sent for transcription")
 
             response = await ws.recv()

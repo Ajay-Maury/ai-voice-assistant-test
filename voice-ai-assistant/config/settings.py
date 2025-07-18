@@ -54,8 +54,8 @@ RESPONSE_AUDIO_CHUNK_DIR = "response_audio_chunks"
 os.makedirs(RESPONSE_AUDIO_CHUNK_DIR, exist_ok=True)
 
 AUDIO_SILENCE_THRESHOLDS = {
-    "MAX_AMPLITUDE": 1000,  # If any sample exceeds this, it's not silent
-    "MIN_RMS_DBFS": -40.0,  # If average energy (RMS in dBFS) is above this, it's not silent
+    "MAX_AMPLITUDE": 10000,  # If any sample exceeds this, it's not silent
+    "MIN_RMS_DBFS": -30.0,  # If average energy (RMS in dBFS) is above this, it's not silent
 }
 
 AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz) 
@@ -109,5 +109,6 @@ SARVAM_VOICE=os.getenv("SARVAM_SPEAKER", "anushka")
 SARVAM_LANGUAGE=os.getenv("SARVAM_LANGUAGE", "hi-IN")
 SARVAM_TTS_MODEL=os.getenv("SARVAM_TTS_MODEL", "bulbul:v2")
 SARVAM_STT_MODEL=os.getenv("SARVAM_STT_MODEL","saarika:v2.5")
+SARVAM_PACE=float(os.getenv("SARVAM_PACE", 1.0))
 
 TAVILY_API_KEY=os.getenv("TAVILY_API_KEY","tvly-Cn5d0xe")

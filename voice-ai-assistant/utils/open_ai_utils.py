@@ -56,7 +56,10 @@ def transcribe_audio_whisper_groq(filepath, lang="hi"):
             transcription = groq_client.audio.translations.create(
                 file=(filepath, audio_file.read()),
                 model=GROQ_STT_MODEL,
-                prompt="We are trying to talk to people who speaks hindi-english mix language.",
+                prompt=(
+                    "Transcribe audio from users who often speak in a mix of Hindi/indian-languages and English. "
+                    "Preserve meaning, skip background noise, ignore filler sounds like 'umm', 'aaa', 'okay' etc, and if there is no valid response then do not return any random text instead of that return an empty response like ''"
+                ),
                 temperature=GROQ_CHAT_TEMPERATURE
             )
         endtime = time.time()
