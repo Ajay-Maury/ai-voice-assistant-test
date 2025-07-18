@@ -1,3 +1,4 @@
+import logging
 from flask import Flask, request, Response, jsonify
 from twilio.twiml.voice_response import VoiceResponse, Start, Stream, Connect
 from twilio.rest import Client
@@ -9,13 +10,8 @@ from config.settings import (
     # WEB_SOCKET_URL,
 )
 
-WEB_SOCKET_URL="wss://poor-worlds-shine.loca.lt"
-VOICE_ROUTE_URL="https://b20d83be37f2.ngrok-free.app/voice"
-
-
-print("Starting Flask app...")
-print("WebSocket URL:", WEB_SOCKET_URL)
-print("Voice Route URL:", VOICE_ROUTE_URL)
+WEB_SOCKET_URL="wss://3nhvvprj-8765.inc1.devtunnels.ms/ws"
+VOICE_ROUTE_URL="https://3nhvvprj-5001.inc1.devtunnels.ms/voice"
 
 app = Flask(__name__)
 
@@ -30,35 +26,54 @@ def health_check():
 
 @app.route("/voice", methods=["POST"])
 def voice():
-    call_sid = request.form.get("CallSid")
-    print(f"Received CallSid: {call_sid}")
-    if not call_sid:
-        return jsonify({"error": "Missing CallSid"}), 400
+    try:
+        call_sid = request.form.get("CallSid")
+        if not call_sid:
+            logging.warning("Missing CallSid in request")
+            return jsonify({"error": "Missing CallSid"}), 400
 
-    response = VoiceResponse()
-    connect = Connect()
-    print(f"Connecting to WebSocket at {WEB_SOCKET_URL}...")
+        logging.info(f"Received CallSid: {call_sid}")
+        response = VoiceResponse()
+        connect = Connect()
 
-    connect.stream(url=WEB_SOCKET_URL)
-    response.append(connect)
-    response.pause(length=60)  # keeps stream alive for 60s
+        logging.info(f"Connecting to WebSocket at {WEB_SOCKET_URL}...")
+        connect.stream(url=WEB_SOCKET_URL)
+        response.append(connect)
 
-    return Response(str(response), mimetype="text/xml")
+        # Keep the stream open (adjust based on your use case)
+        response.pause(length=60)
 
+        return Response(str(response), mimetype="text/xml")
+
+    except Exception as e:
+        logging.exception("Error handling /voice request")
+        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 
 @app.route("/make-call", methods=["POST"])
 def make_call():
-    to_number = request.form.get("to")
-    if not to_number:
-        return jsonify({"error": "Missing 'to' number"}), 400
+    try:
+        to_number = request.form.get("to")
+        if not to_number:
+            logging.warning("Missing 'to' number in request")
+            return jsonify({"error": "Missing 'to' number"}), 400
 
-    call = client.calls.create(
-        to=to_number,
-        from_=TWILIO_NUMBER,
-        url=VOICE_ROUTE_URL,
-    )
-    return jsonify({"message": "Call initiated", "sid": call.sid})
+        if not TWILIO_NUMBER or not VOICE_ROUTE_URL:
+            logging.error("TWILIO_NUMBER or VOICE_ROUTE_URL is not set")
+            return jsonify({"error": "Server misconfiguration"}), 500
 
+        logging.info(f"Initiating call from {TWILIO_NUMBER} to {to_number}")
+        call = client.calls.create(
+            to=to_number,
+            from_=TWILIO_NUMBER,
+            url=VOICE_ROUTE_URL,
+        )
+
+        return jsonify({"message": "Call initiated", "sid": call.sid})
+
+    except Exception as e:
+        logging.exception("Error initiating call")
+        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     app.run(debug=True, host="0.0.0.0", port=5001)

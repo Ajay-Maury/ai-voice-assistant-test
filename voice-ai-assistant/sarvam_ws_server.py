@@ -75,32 +75,36 @@ async def wait_for_tts_finish(tts_task):
 async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, raw_buffer_ref, tts_task_ref, tts_type_ref, tts_stop_event_ref, speech_start_ref):
     print(f"[Engagement-{call_sid}]: Starting user engagement monitor")
 
-    last_engaged_time = 0
-    last_disengaged_time = 0
-    silent_since = None
+    last_engaged_time = 0         # Last time an engaged response was sent
+    last_disengaged_time = 0      # Last time a disengaged response was sent
+    silent_since = None           # Timestamp when silence started
 
     while not stop_event.is_set():
-        await asyncio.sleep(0.50)
+        await asyncio.sleep(0.50)  # Check engagement every 500ms
         now = asyncio.get_event_loop().time()
 
         user_is_talking = len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES
         tts_active = tts_task_ref[0] and not tts_task_ref[0].done()
 
+        # If no TTS is active or TTS task is finished, reset its type
         if not tts_task_ref[0] or tts_task_ref[0].done():
-            tts_type_ref[0] = None   # Reset the TTS type to None, indicating that no TTS is currently being played
-        
+            tts_type_ref[0] = None
+
         if user_is_talking:
+            # Reset silence tracking if user is speaking again
             if silent_since is not None:
                 print(f"[Engagement-{call_sid}]: User started speaking again")
             silent_since = None
 
+            # Track when speech starts
             if speech_start_ref[0] == 0:
                 speech_start_ref[0] = now
 
             time_speaking = now - speech_start_ref[0]
-            last_disengaged_time = 0  # reset disengaged time when talking
+            last_disengaged_time = 0  # Reset disengaged tracking
             # print(f"--time_speaking--: {time_speaking}, user_is_talking---: {user_is_talking}, last_engaged_time--: {last_engaged_time}, now - last_engaged_time--: {now - last_engaged_time}")
 
+            # If user has been speaking for a while or it's time to repeat an engagement response
             if (
                 (last_engaged_time == 0 and time_speaking >= ENGAGEMENT_TRIGGER_SECONDS) or
                 (last_engaged_time > 0 and (now - last_engaged_time) >= ENGAGEMENT_BACKCHANNEL_REPEAT_DELAY)
@@ -109,21 +113,29 @@ async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, r
                 text = get_engagement_response("ENGAGED", "hi")
                 print(f"[Engagement-{call_sid}]: Sending engaged response: '{text}'")
 
+                # Start a TTS task for engaged backchannel
                 tts_stop_event_ref.clear()
                 tts_type_ref[0] = "engagement_response"
                 tts_task_ref[0] = asyncio.create_task(
                     stream_tts_to_client(websocket, stream_sid, text, call_sid, tts_stop_event_ref, mark_name="engagement_response")
                 )
                 last_engaged_time = now
-        elif not tts_type_ref[0] == "ai_response":
+
+        elif tts_type_ref[0] and not tts_type_ref[0] == "disengagement_response":
+            # If currently playing engagement_response or ai_response, don’t interrupt it
+            silent_since = None
+
+        else:
+            # Start tracking silence if user stops talking
             if silent_since is None:
                 silent_since = now
                 speech_start_ref[0] = 0  # Reset speech start when silence begins
 
             time_silent = now - silent_since
-            last_engaged_time = 0  # reset engaged time when silent
+            last_engaged_time = 0  # Reset engaged tracking
             # print(f"silent_since--: {silent_since}, time_silent--: {time_silent}, DISENGAGEMENT_TRIGGER_SECONDS---: {DISENGAGEMENT_TRIGGER_SECONDS}, last_disengaged_time--: {last_disengaged_time}, now - last_disengaged_time--: {now - last_disengaged_time}")
 
+            # If silence is long enough or it's time to repeat disengagement prompt
             if (
                 (last_disengaged_time == 0 and time_silent >= DISENGAGEMENT_TRIGGER_SECONDS) or
                 (last_disengaged_time > 0 and (now - last_disengaged_time) >= DISENGAGEMENT_BACKCHANNEL_REPEAT_DELAY)
@@ -132,6 +144,7 @@ async def monitor_user_engagement(websocket, stream_sid, call_sid, stop_event, r
                 text = get_engagement_response("DISENGAGED", "hi")
                 print(f"[Engagement-{call_sid}]: Sending disengaged response: '{text}'")
 
+                # Start a TTS task for disengaged backchannel
                 tts_stop_event_ref.clear()
                 tts_type_ref[0] = "disengagement_response"
                 tts_task_ref[0] = asyncio.create_task(
@@ -148,14 +161,14 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
         now = asyncio.get_event_loop().time()
         elapsed = now - last_audio_time_ref[0]
 
-        if len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES and tts_task_ref[0] and not tts_task_ref[0].done() and not tts_type_ref[0] == "engagement_response":
+        if len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES and tts_task_ref[0] and not tts_task_ref[0].done() and not (tts_type_ref[0] == "engagement_response" or tts_type_ref[0] == "ai_greet_response"):
             print(f"[Barge-in-{call_sid}]: User interrupted AI TTS")
             tts_stop_event_ref.set()
-            await wait_for_tts_finish(tts_task_ref[0])
+            # await wait_for_tts_finish(tts_task_ref[0])
             await websocket.send(json.dumps({"event": "clear", "streamSid": stream_sid}))
             await websocket.send(json.dumps({"event": "mark", "streamSid": stream_sid, "mark": {"name": "tts_interrupted"}}))
 
-        if len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES and elapsed >= AUDIO_BUFFER_SILENCE:
+        elif len(raw_buffer_ref[0]) > MIN_AUDIO_BYTES and elapsed >= AUDIO_BUFFER_SILENCE:
             print(f"[Silence-{call_sid}]: Silence detected after {elapsed:.2f}s, transcribing audio, now - speech_start_ref[0]-- {now - speech_start_ref[0]}")
             try:
                 audio_file = convert_mulaw_to_wav(call_sid, raw_buffer_ref[0])
@@ -178,10 +191,10 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
 
                 print(f"[User-{call_sid}]: {user_text}")
 
-                if tts_task_ref[0] and not tts_task_ref[0].done() and tts_type_ref[0] == "engagement_reply":
-                    print(f"[Silence-{call_sid}]: Interrupting engagement reply TTS")
-                    await websocket.send(json.dumps({"event": "clear", "streamSid": stream_sid}))
-                    await websocket.send(json.dumps({"event": "mark", "streamSid": stream_sid, "mark": {"name": "engagement_reply_tts_interrupted"}}))
+                # if tts_task_ref[0] and not tts_task_ref[0].done() and tts_type_ref[0] == "disengagement_response":
+                #     print(f"[Silence-{call_sid}]: Interrupting engagement reply TTS")
+                #     await websocket.send(json.dumps({"event": "clear", "streamSid": stream_sid}))
+                #     await websocket.send(json.dumps({"event": "mark", "streamSid": stream_sid, "mark": {"name": "disengagement_response_tts_interrupted"}}))
                 
                 context = get_context(call_sid)
                 ai_response = await get_ai_response(user_text, context, call_sid)
@@ -194,6 +207,7 @@ async def detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref
                     await wait_for_tts_finish(tts_task_ref[0])
 
                 tts_stop_event_ref.clear()
+                tts_type_ref[0] = "ai_response"
                 tts_task_ref[0] = asyncio.create_task(
                     stream_tts_to_client(websocket, stream_sid, ai_response, call_sid, tts_stop_event_ref, mark_name="ai_response")
                 )
@@ -209,8 +223,8 @@ async def websocket_handler(websocket):
 
     call_sid, stream_sid = None, None
     buffer_ref, raw_buffer_ref = [b""], [b""]
-    tts_task_ref = [None]
-    tts_type_ref = [None]
+    tts_task_ref = [None]  # type: list[object]
+    tts_type_ref = [None]  # type: list[str | None]
     tts_stop_event = asyncio.Event()
     stop_event = asyncio.Event()
     last_audio_time_ref = [asyncio.get_event_loop().time()]
@@ -227,6 +241,18 @@ async def websocket_handler(websocket):
                 call_sid = data["start"]["callSid"]
                 stream_sid = data["start"]["streamSid"]
                 print(f"[Start]: callSid={call_sid}, streamSid={stream_sid}")
+
+                user_text = ""
+                context = get_context(call_sid)
+                print("Genetating user greeting message")
+                ai_response = await get_ai_response(user_text, context, call_sid)
+                store_context(call_sid, user_text, ai_response)
+                tts_type_ref[0] = "ai_greet_response"
+                print(f"starting tts for greet message:-- {ai_response}")
+                tts_task_ref[0] = asyncio.create_task(
+                    stream_tts_to_client(websocket, stream_sid, ai_response, call_sid, tts_stop_event, mark_name="ai_greet_response")
+                )
+                # await wait_for_tts_finish(tts_type_ref[0])
 
                 silence_task = asyncio.create_task(
                     detect_silence_and_respond(websocket, stream_sid, call_sid, buffer_ref, raw_buffer_ref, stop_event,
