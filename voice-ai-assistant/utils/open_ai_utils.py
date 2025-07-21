@@ -1,11 +1,14 @@
 import asyncio
 import os
+import re
 import time
+from typing import Optional, Set
 import uuid
 from groq import Groq
 import whisper
 from openai import AsyncOpenAI, OpenAI
 from config.settings import (
+    ENGAGEMENT_WORDS,
     GROQ_API_KEY,
     GROQ_CHAT_TEMPERATURE,
     GROQ_STT_MODEL,
@@ -45,8 +48,6 @@ async def get_ai_response(user_input, context=None, call_sid="default"):
         return "Sorry, something went wrong."
 
 
-
-
 def transcribe_audio_whisper_groq(filepath, lang="hi"):
     try:
         start_time = time.time()
@@ -69,5 +70,29 @@ def transcribe_audio_whisper_groq(filepath, lang="hi"):
         return transcription.text.strip() if hasattr(transcription, 'text') else ""
     except Exception as e:
         print("Groq Whisper v3-turbo error:", e)
-        return ""
+        raise e
+
+
+async def is_user_engagement(
+    user_text: str,
+    call_sid: str,
+    lang: str = "hi",
+) -> bool:
+    """
+    Determines whether user_text is just engagement.
+
+    Returns:
+        True if user input is considered an engagement/backchannel,
+        False if it's a true interruption.
+    """
+    normalized = re.sub(r'[^\w\s]', '', user_text.lower().strip())
+
+    if normalized in ENGAGEMENT_WORDS:
+        return True
+
+    try:
+        return await langchain_agent.classify_user_input_type(user_text, call_sid)
+    except Exception as e:
+        print(f"[BargeIn-{call_sid}]: LLM classification error: {e}")
+        return False
 

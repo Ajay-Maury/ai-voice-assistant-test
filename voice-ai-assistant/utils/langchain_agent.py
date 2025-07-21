@@ -3,9 +3,12 @@ from typing import List, Dict, Any
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain.memory import ConversationBufferMemory
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.tools.tavily_search import TavilySearchResults
+# from langchain_tavily import TavilySearch
+
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq 
 from config.settings import TAVILY_API_KEY, GROQ_API_KEY
@@ -165,7 +168,7 @@ class LangChainAIAgent:
             del self.memories[call_sid]
         if call_sid in self.agent_executors:
             del self.agent_executors[call_sid]
-    
+
     def get_conversation_history(self, call_sid: str) -> List[Dict[str, Any]]:
         """Get conversation history for a specific call in a readable format"""
         memory = self.get_memory(call_sid)
@@ -179,3 +182,44 @@ class LangChainAIAgent:
                 history.append({"role": "assistant", "content": message.content})
         
         return history
+    
+    async def classify_user_input_type(self, user_text: str, call_sid: str) -> bool:
+            """
+            Classify the user input as 'engagement' or 'interrupt' using the LLM.
+            """
+            try:
+                # Get the last 3 messages
+                history = self.get_conversation_history(call_sid)
+                recent_turns = history[-3:] if len(history) >= 3 else history
+                recent_context = "\n".join(
+                    f"{m['role']}: {m['content']}" for m in recent_turns
+                )
+    
+                prompt = PromptTemplate.from_template("""
+                    You are an assistant that classifies short user utterances during a phone call
+                    as either 'engagement' (e.g. "haan", "hmm", "okay", "and") or 'interrupt' (e.g. "what did you say?", "I have a question").
+                    also if the user is not saying anything meaningful or related to the conversation then consider it as 'engagement'.
+
+                    Respond with boolean: true for "engagement" or false for "interrupt".
+
+                    Recent conversation:
+                    {recent_context}
+
+                    User said: "{user_text}"
+                """)
+
+                output_parser = StrOutputParser()
+                chain = prompt | self.llm | output_parser
+
+                result = await chain.ainvoke({
+                    "user_text": user_text.strip(),
+                    "recent_context": recent_context
+                })
+
+                response = result.strip().lower()
+                print(f"[Classifier] Classified '{user_text}' as engaged: {response}")
+                return response == "true"
+
+            except Exception as e:
+                print(f"[Classifier] LLM error: {e}")
+                return False

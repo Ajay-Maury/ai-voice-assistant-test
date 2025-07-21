@@ -47,6 +47,13 @@ Do you have a quick minute for me to share how it might help your business?"
 """
 
 
+INITIAL_GREETING_TEXT = "Hi there, this is Manisha from Omen Tech Innovations! Kya aap kisi business ko chalate hain ya kisi aise business ke saath kaam karte hain jo customer calls handle karta hai?"
+
+# Predefined user engagement expressions
+ENGAGEMENT_WORDS = {
+    "haan", "hmm", "hum", "achha", "ok", "okay", "sahi", "theek hai", "huh", "yes", "i see", "understood", "hmm hmm"
+}
+
 AUDIO_CHUNK_DIR = "audio_chunks"
 os.makedirs(AUDIO_CHUNK_DIR, exist_ok=True)
 
@@ -57,6 +64,9 @@ AUDIO_SILENCE_THRESHOLDS = {
     "MAX_AMPLITUDE": 10000,  # If any sample exceeds this, it's not silent
     "MIN_RMS_DBFS": -30.0,  # If average energy (RMS in dBFS) is above this, it's not silent
 }
+
+AUDIO_CACHE_DIR = "static/audio_cache"
+os.makedirs(AUDIO_CACHE_DIR, exist_ok=True)
 
 AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz) 
 AUDIO_SAMPLE_RATE = 8000  # Sample rate for audio
