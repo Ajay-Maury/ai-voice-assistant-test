@@ -103,6 +103,9 @@ AUDIO_BUFFER_SILENCE = 1.5  # Seconds of silence to wait before processing audio
 # MIN_AUDIO_BYTES = 8000 * 0.75  # 8000 samples * 0.75 sec of bytes of μ-law audio at 8kHz
 MIN_AUDIO_BYTES = 6000  # ≈ 0.125 seconds of μ-law audio at 8kHz
 
+VAD_MIN_SILENCE_FRAMES = 5  # Minimum silent frames to consider end of speech
+VAD_FRAME_SIZE = 320  # Size of each VAD frame in samples (20ms at 16kHz)
+
 ENGAGEMENT_RESPONSES = {
     "ENGAGED": {
         "en": ["hmm", "okay", "got it", "yeah"],
