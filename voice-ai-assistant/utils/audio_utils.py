@@ -8,7 +8,11 @@ from config.settings import (
     AUDIO_SILENCE_THRESHOLDS,
     RESPONSE_AUDIO_CHUNK_DIR
 )
+import webrtcvad
 
+
+# Create a VAD instance with aggressiveness level (0–3)
+vad = webrtcvad.Vad(2)
 
 # Generate µ-law to PCM16 decode table (based on G.711 standard)
 def _generate_mulaw_to_pcm16_table() -> np.ndarray:
@@ -63,6 +67,7 @@ def is_silent_mulaw_audio(
         bool: True if the chunk is silent, False otherwise.
     """
     if not mulaw_audio_bytes:
+        print("[DEBUG] Received empty µ-law audio bytes, treating as silent.")
         return True  # No data = silent
 
     # Convert byte stream to numpy array (uint8)
@@ -237,3 +242,41 @@ async def convert_wav_chunk_bytes_to_mulaw(wav_chunk: bytes) -> bytes:
     except Exception as e:
         print(f"[ERROR] WAV chunk μ-law conversion failed: {e}")
         return None
+
+
+def mulaw_to_pcm(audio_bytes: bytes) -> np.ndarray:
+    """
+    Converts 8-bit µ-law audio bytes to 16-bit PCM using a precomputed lookup table.
+    """
+    if not audio_bytes:
+        return np.array([], dtype=np.int16)
+
+    mulaw_array = np.frombuffer(audio_bytes, dtype=np.uint8)
+    pcm_samples = _MULAW_DECODE_TABLE[mulaw_array]
+    return pcm_samples
+
+
+def is_voiced(audio_bytes: bytes, sample_rate: int = 8000, frame_duration_ms: int = 30) -> bool:
+    """
+    Determine if the given μ-law audio contains speech using WebRTC VAD.
+    - audio_bytes: raw μ-law audio bytes (e.g., from Twilio)
+    - sample_rate: usually 8000 Hz for μ-law
+    - frame_duration_ms: must be 10, 20, or 30
+    """
+    try:
+        pcm_samples = mulaw_to_pcm(audio_bytes)
+        frame_size = int(sample_rate * frame_duration_ms / 1000)
+        # print("[DEBUG] Frame size for VAD:", frame_size)
+
+        if len(pcm_samples) < frame_size:
+            return False  # not enough data
+
+        frame = pcm_samples[:frame_size].tobytes()
+        # print("[DEBUG] Frame size in bytes for VAD:", len(frame))
+        # print("[DEBUG] vad.is_speech(frame, sample_rate):", vad.is_speech(frame, sample_rate))  # Print first 20 bytes for debugging
+        return vad.is_speech(frame, sample_rate)
+
+    except Exception as e:
+        print(f"[VAD Error]: {e}")
+        return False
+

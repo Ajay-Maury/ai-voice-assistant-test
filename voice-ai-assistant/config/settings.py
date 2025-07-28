@@ -51,7 +51,35 @@ INITIAL_GREETING_TEXT = "Hi there, this is Manisha from Omen Tech Innovations! K
 
 # Predefined user engagement expressions
 ENGAGEMENT_WORDS = {
-    "haan", "hmm", "hum", "achha", "ok", "okay", "sahi", "theek hai", "huh", "yes", "i see", "understood", "hmm hmm"
+    # Common Hinglish acknowledgements
+    "haan", "ha", "hanji", "haanji", "hmm", "hmm hmm", "hmmhmm", "huh", "huh huh", "uh huh",
+    "hum", "ji", "hmm ji", "hmm haan", "hmm haanji", "hmm hanji",
+    
+    # Variants of "ok", "fine", "alright"
+    "ok", "okay", "ok ok", "okay okay", "okey", "alright", "right", "fine", "cool", "done", "perfect", "great", "nice",
+    "hmm okay", "hmm ok", "hmm fine", "hmm great", "hmm nice", "hmm perfect", "hmm done", "sounds good", "makes sense",
+    
+    # Hindi acknowledgements
+    "achha", "accha", "acha", "thik hai", "theek hai", "theek", "samjha", "samajh gaya", "hmm samajh gaya", "hmm samjha",
+    "sahi", "hmm sahi", "hmm theek", "hmm thik", "hmm achha", "hmm accha", "hmm acha",
+    
+    # Basic affirmatives
+    "yes", "yeah", "yup", "i see", "got it", "i got it", "understood", "noted", "sure", "okay sure", "yes yes",
+    
+    # Expressions often used in non-intent fillers
+    "oh", "ohh", "oh okay", "ohh okay", "ohk", "hmm oh", "hmm ohk", "hmm hmm hmm", "hmm noted", "hmm sure",
+
+    # Polite closures or filler
+    "thank you", "thanks", "thanks a lot", "thankyou", "thank u", "thankyou so much", "thanks so much",
+
+    # Connectors (used as filler)
+    "and", "or", "yeah yeah", "ya", "yaar", "bas", "thik", "hmm thik hai", "hmm theek hai", "thik thak",
+
+    # Friendly passive tone
+    "hmm hmm hmm", "mmm", "mmm hmm", "nice nice", "great great",
+
+    # Random casual fillers
+    "Thank you for watching!"
 }
 
 AUDIO_CHUNK_DIR = "audio_chunks"
@@ -72,7 +100,8 @@ AUDIO_CHUNK_SIZE = 160  # Size of audio chunks in bytes (20ms at 8000Hz)
 AUDIO_SAMPLE_RATE = 8000  # Sample rate for audio
 SILENCE_MAX_DURATION=0.8  # Max seconds of silence to be added in audio buffer  s
 AUDIO_BUFFER_SILENCE = 1.5  # Seconds of silence to wait before processing audio
-MIN_AUDIO_BYTES = 8000 * 0.75  # 8000 samples * 0.75 sec of bytes of μ-law audio at 8kHz
+# MIN_AUDIO_BYTES = 8000 * 0.75  # 8000 samples * 0.75 sec of bytes of μ-law audio at 8kHz
+MIN_AUDIO_BYTES = 6000  # ≈ 0.125 seconds of μ-law audio at 8kHz
 
 ENGAGEMENT_RESPONSES = {
     "ENGAGED": {

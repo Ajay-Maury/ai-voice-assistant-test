@@ -85,10 +85,22 @@ async def is_user_engagement(
         True if user input is considered an engagement/backchannel,
         False if it's a true interruption.
     """
-    normalized = re.sub(r'[^\w\s]', '', user_text.lower().strip())
+
+    # Lowercase
+    text = user_text.lower().strip()
+
+    # Remove punctuation and special characters (except letters, digits, whitespace)
+    text = re.sub(r"[^\w\s]", "", text)
+
+    # Collapse multiple spaces to a single space
+    normalized = re.sub(r"\s+", " ", text)
+    
+    if not normalized:
+        return True
 
     if normalized in ENGAGEMENT_WORDS:
         return True
+    return False
 
     try:
         return await langchain_agent.classify_user_input_type(user_text, call_sid)
